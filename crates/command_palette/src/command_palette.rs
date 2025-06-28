@@ -21,7 +21,9 @@ use persistence::COMMAND_PALETTE_HISTORY;
 use picker::{Picker, PickerDelegate};
 use postage::{sink::Sink, stream::Stream};
 use settings::Settings;
-use ui::{HighlightedLabel, KeyBinding, ListItem, ListItemSpacing, h_flex, prelude::*, v_flex};
+use ui::{
+    Color, HighlightedLabel, KeyBinding, ListItem, ListItemSpacing, h_flex, prelude::*, v_flex,
+};
 use util::ResultExt;
 use workspace::{ModalView, Workspace, WorkspaceSettings};
 use zed_actions::{OpenZedUrl, command_palette::Toggle};
@@ -415,6 +417,20 @@ impl PickerDelegate for CommandPaletteDelegate {
     ) -> Option<Self::ListItem> {
         let matching_command = self.matches.get(ix)?;
         let command = self.commands.get(matching_command.candidate_id)?;
+
+        // Check if this command has been used before
+        let hit_counts = self.hit_counts();
+        let has_been_used = hit_counts.get(&command.name).copied().unwrap_or(0) > 0;
+        // Create the highlighted label with conditional coloring
+        let highlighted_label =
+            HighlightedLabel::new(command.name.clone(), matching_command.positions.clone());
+
+        let highlighted_label = if has_been_used {
+            highlighted_label.color(Color::Accent)
+        } else {
+            highlighted_label
+        };
+
         Some(
             ListItem::new(ix)
                 .inset(true)
@@ -425,10 +441,7 @@ impl PickerDelegate for CommandPaletteDelegate {
                         .w_full()
                         .py_px()
                         .justify_between()
-                        .child(HighlightedLabel::new(
-                            command.name.clone(),
-                            matching_command.positions.clone(),
-                        ))
+                        .child(highlighted_label)
                         .children(KeyBinding::for_action_in(
                             &*command.action,
                             &self.previous_focus_handle,
