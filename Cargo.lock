@@ -8952,6 +8952,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "keymap_schema_generator"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "command_palette",
+ "gpui",
+ "serde_json",
+ "settings",
+ "workspace-hack",
+ "zed",
+]
+
+[[package]]
 name = "khronos-egl"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

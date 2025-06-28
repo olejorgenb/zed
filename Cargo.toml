@@ -89,6 +89,7 @@ members = [
     "crates/jj",
     "crates/jj_ui",
     "crates/journal",
+    "crates/keymap_schema_generator",
     "crates/language",
     "crates/language_extension",
     "crates/language_model",
