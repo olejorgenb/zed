@@ -1601,6 +1601,7 @@ impl PickerDelegate for FileFinderDelegate {
             .get(ix)
             .expect("Invalid matches state: no element for index {ix}");
 
+        // MARK: Recently opened rendering
         let history_icon = match &path_match {
             Match::History { .. } => Icon::new(IconName::HistoryRerun)
                 .color(Color::Muted)
