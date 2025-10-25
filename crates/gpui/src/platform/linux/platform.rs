@@ -880,7 +880,7 @@ impl crate::Keystroke {
             _ => {
                 let name = xkb::keysym_get_name(key_sym).to_lowercase();
                 if key_sym.is_keypad_key() {
-                    name.replace("kp_", "")
+                    format!("numpad_{}", name.strip_prefix("kp_").unwrap_or(&name))
                 } else if let Some(key) = key_utf8.chars().next()
                     && key_utf8.len() == 1
                     && key.is_ascii()

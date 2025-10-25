@@ -109,7 +109,55 @@ impl Keystroke {
             }
         }
 
-        target.inner.modifiers == self.modifiers && target.inner.key == self.key
+        // Check for exact match first
+        if target.inner.modifiers == self.modifiers && target.inner.key == self.key {
+            return true;
+        }
+
+        // Linux numpad key equivalence: if the typed key is a numpad key,
+        // also try matching against the equivalent regular key
+        #[cfg(target_os = "linux")]
+        if self.key.starts_with("numpad_") && target.inner.modifiers == self.modifiers {
+            let equivalent_key = match self.key.as_str() {
+                "numpad_0" => Some("0"),
+                "numpad_1" => Some("1"),
+                "numpad_2" => Some("2"),
+                "numpad_3" => Some("3"),
+                "numpad_4" => Some("4"),
+                "numpad_5" => Some("5"),
+                "numpad_6" => Some("6"),
+                "numpad_7" => Some("7"),
+                "numpad_8" => Some("8"),
+                "numpad_9" => Some("9"),
+                "numpad_plus" => Some("+"),
+                "numpad_minus" => Some("-"),
+                "numpad_multiply" => Some("*"),
+                "numpad_divide" => Some("/"),
+                "numpad_equal" => Some("="),
+                "numpad_decimal" => Some("."),
+                "numpad_separator" => Some(","),
+                "numpad_enter" => Some("enter"),
+                "numpad_home" => Some("home"),
+                "numpad_end" => Some("end"),
+                "numpad_pageup" => Some("pageup"),
+                "numpad_pagedown" => Some("pagedown"),
+                "numpad_left" => Some("left"),
+                "numpad_right" => Some("right"),
+                "numpad_up" => Some("up"),
+                "numpad_down" => Some("down"),
+                "numpad_insert" => Some("insert"),
+                "numpad_delete" => Some("delete"),
+                _ => None,
+            };
+
+            if let Some(equiv) = equivalent_key {
+                if target.inner.key == equiv {
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// key syntax is:
@@ -764,4 +812,138 @@ fn unparse(modifiers: &Modifiers, key: &str) -> String {
     }
     result.push_str(&key);
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_numpad_key_equivalence() {
+        // Create a regular keystroke for "1"
+        let regular_keystroke = Keystroke {
+            modifiers: Modifiers::none(),
+            key: "1".to_string(),
+            key_char: None,
+        };
+
+        // Create a numpad keystroke for "numpad_1"
+        let numpad_keystroke = Keystroke {
+            modifiers: Modifiers::none(),
+            key: "numpad_1".to_string(),
+            key_char: None,
+        };
+
+        // Create a keybinding keystroke targeting regular "1"
+        let target_binding = KeybindingKeystroke::from_keystroke(regular_keystroke.clone());
+
+        // Regular keystroke should match the target
+        assert!(regular_keystroke.should_match(&target_binding));
+
+        // Numpad keystroke should also match the target (equivalence)
+        assert!(numpad_keystroke.should_match(&target_binding));
+
+        // Test with modifiers
+        let ctrl_regular = Keystroke {
+            modifiers: Modifiers::control(),
+            key: "1".to_string(),
+            key_char: None,
+        };
+
+        let ctrl_numpad = Keystroke {
+            modifiers: Modifiers::control(),
+            key: "numpad_1".to_string(),
+            key_char: None,
+        };
+
+        let ctrl_target = KeybindingKeystroke::from_keystroke(ctrl_regular.clone());
+
+        assert!(ctrl_regular.should_match(&ctrl_target));
+        assert!(ctrl_numpad.should_match(&ctrl_target));
+
+        // Test numpad-specific binding
+        let numpad_target = KeybindingKeystroke::from_keystroke(numpad_keystroke.clone());
+
+        // Numpad keystroke should match numpad target
+        assert!(numpad_keystroke.should_match(&numpad_target));
+
+        // Regular keystroke should NOT match numpad-specific target
+        assert!(!regular_keystroke.should_match(&numpad_target));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_numpad_key_fallback_behavior() {
+        // This test verifies the numpad key equivalence behavior:
+        // 1. Numpad keys can match their equivalent regular key bindings (fallback)
+        // 2. Regular keys cannot match numpad-specific bindings (no reverse fallback)
+
+        let regular_keystroke = Keystroke {
+            modifiers: Modifiers::none(),
+            key: "1".to_string(),
+            key_char: None,
+        };
+
+        let numpad_keystroke = Keystroke {
+            modifiers: Modifiers::none(),
+            key: "numpad_1".to_string(),
+            key_char: None,
+        };
+
+        // Case 1: Regular binding exists - numpad key should fall back to it
+        let regular_target = KeybindingKeystroke::from_keystroke(regular_keystroke.clone());
+
+        // Regular keystroke matches regular binding (obvious)
+        assert!(regular_keystroke.should_match(&regular_target));
+
+        // Numpad keystroke should also match regular binding (fallback)
+        assert!(numpad_keystroke.should_match(&regular_target));
+
+        // Case 2: Numpad-specific binding exists - regular key should NOT match it
+        let numpad_target = KeybindingKeystroke::from_keystroke(numpad_keystroke.clone());
+
+        // Numpad keystroke matches numpad binding (obvious)
+        assert!(numpad_keystroke.should_match(&numpad_target));
+
+        // Regular keystroke should NOT match numpad binding (no reverse fallback)
+        assert!(!regular_keystroke.should_match(&numpad_target));
+
+        // This confirms the fallback behavior works correctly:
+        // - Numpad keys can fall back to regular key bindings
+        // - Regular keys cannot match numpad-specific bindings
+        // - This allows both shared and specialized numpad behavior
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn test_numpad_operators_equivalence() {
+        let cases = [
+            ("numpad_plus", "+"),
+            ("numpad_minus", "-"),
+            ("numpad_multiply", "*"),
+            ("numpad_divide", "/"),
+            ("numpad_enter", "enter"),
+        ];
+
+        for (numpad_key, regular_key) in cases {
+            let numpad_keystroke = Keystroke {
+                modifiers: Modifiers::none(),
+                key: numpad_key.to_string(),
+                key_char: None,
+            };
+
+            let regular_keystroke = Keystroke {
+                modifiers: Modifiers::none(),
+                key: regular_key.to_string(),
+                key_char: None,
+            };
+
+            let target_binding = KeybindingKeystroke::from_keystroke(regular_keystroke.clone());
+
+            // Numpad key should match regular key binding
+            assert!(numpad_keystroke.should_match(&target_binding),
+                    "numpad key '{}' should match regular key '{}'", numpad_key, regular_key);
+        }
+    }
 }

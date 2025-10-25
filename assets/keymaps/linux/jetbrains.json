@@ -28,8 +28,10 @@
       // "ctrl-alt-shift-b": "editor::SelectToPreviousWordStart",
       "ctrl-alt-enter": "editor::NewlineAbove",
       "shift-enter": "editor::NewlineBelow",
-      // "ctrl--": "editor::Fold", // TODO: `ctrl-numpad--` (numpad not implemented)
-      // "ctrl-+": "editor::UnfoldLines", // TODO: `ctrl-numpad+` (numpad not implemented)
+      "ctrl--": "editor::Fold",
+      "ctrl-+": "editor::UnfoldLines",
+      "ctrl-numpad_minus": "editor::Fold", // Numpad-specific binding
+      "ctrl-numpad_plus": "editor::UnfoldLines", // Numpad-specific binding
       "alt-shift-g": "editor::SplitSelectionIntoLines",
       "alt-j": ["editor::SelectNext", { "replace_newest": false }],
       "alt-shift-j": ["editor::SelectPrevious", { "replace_newest": false }],
