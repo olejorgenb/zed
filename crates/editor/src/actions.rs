@@ -355,6 +355,17 @@ actions!(
     ]
 );
 
+/// Opens navigation history entries in a multibuffer with configurable context lines.
+#[derive(PartialEq, Clone, Deserialize, Default, JsonSchema, Action)]
+#[action(namespace = editor)]
+#[serde(deny_unknown_fields)]
+pub struct OpenNavigationHistoryInMultibuffer {
+    /// Number of context lines to show around each navigation entry.
+    /// If not specified, uses the default from editor settings.
+    #[serde(default)]
+    pub context_lines: Option<u32>,
+}
+
 actions!(
     editor,
     [

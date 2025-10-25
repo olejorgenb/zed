@@ -20040,6 +20040,197 @@ impl Editor {
         .detach();
     }
 
+    pub fn open_navigation_history_in_multibuffer(
+        &mut self,
+        action: &OpenNavigationHistoryInMultibuffer,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(workspace) = self.workspace() else {
+            return;
+        };
+
+        let pane = workspace.read(cx).active_pane();
+        let context_lines = action.context_lines
+            .unwrap_or_else(|| multibuffer_context_lines(cx));
+
+        // First, collect navigation entry information without reading editor entities
+        let mut nav_entries = Vec::new();
+        pane.read(cx).nav_history().for_each_entry(cx, |entry, (_project_path, _fs_path)| {
+            if let Some(data) = &entry.data {
+                if let Some(nav_data) = data.downcast_ref::<NavigationData>() {
+                    if let Some(item) = entry.item.upgrade() {
+                        if let Some(editor) = item.downcast::<Editor>() {
+                            nav_entries.push((editor, nav_data.cursor_position));
+                        }
+                    }
+                }
+            }
+        });
+
+        if nav_entries.is_empty() {
+            log::info!("No navigation history entries found to open in multibuffer");
+            return;
+        }
+
+        let title = format!("Navigation History ({} entries)", nav_entries.len());
+
+        // Process entries in async context to avoid borrow checker issues
+        cx.spawn_in(window, async move |_, cx| {
+            let result = workspace.update_in(cx, |workspace, window, cx| {
+                let mut locations = std::collections::HashMap::<Entity<Buffer>, Vec<Range<Point>>>::new();
+
+                // Now we can safely read editor entities in the async context
+                for (editor, cursor_pos) in nav_entries {
+                    // Read entities in synchronous context (we're inside update_in)
+                    let multibuffer = editor.read_with(cx, |editor, _| editor.buffer().clone());
+                    let buffer_opt = multibuffer.read_with(cx, |mb, _| mb.as_singleton().map(|b| b.clone()));
+                    
+                    // Only handle single buffers for now
+                    if let Some(buffer) = buffer_opt {
+                        // Create a small range around the cursor position
+                        let range = cursor_pos..cursor_pos;
+
+                        locations.entry(buffer)
+                            .or_default()
+                            .push(range);
+                    }
+                }
+
+                if locations.is_empty() {
+                    return;
+                }
+
+                Self::open_locations_in_multibuffer_with_context_lines(
+                    workspace,
+                    locations,
+                    title,
+                    false, // Don't split by default
+                    MultibufferSelectionMode::First,
+                    context_lines,
+                    window,
+                    cx,
+                );
+            });
+
+            if let Err(e) = result {
+                log::error!("Failed to open navigation history in multibuffer: {}", e);
+            }
+        }).detach();
+    }
+
+    /// Opens a multibuffer with the given project locations and custom context lines
+    pub fn open_locations_in_multibuffer_with_context_lines(
+        workspace: &mut Workspace,
+        locations: std::collections::HashMap<Entity<Buffer>, Vec<Range<Point>>>,
+        title: String,
+        split: bool,
+        multibuffer_selection_mode: MultibufferSelectionMode,
+        context_lines: u32,
+        window: &mut Window,
+        cx: &mut Context<Workspace>,
+    ) {
+        if locations.is_empty() {
+            log::error!("bug: open_locations_in_multibuffer_with_context_lines called with empty list of locations");
+            return;
+        }
+
+        let capability = workspace.project().read(cx).capability();
+        let mut ranges = <Vec<Range<Anchor>>>::new();
+
+        // a key to find existing multibuffer editors with the same set of locations
+        // to prevent us from opening more and more multibuffer tabs for searches and the like
+        let mut key = (title.clone(), vec![]);
+        let excerpt_buffer = cx.new(|cx| {
+            let key = &mut key.1;
+            let mut multibuffer = MultiBuffer::new(capability);
+            for (buffer, mut ranges_for_buffer) in locations {
+                ranges_for_buffer.sort_by_key(|range| (range.start, Reverse(range.end)));
+                key.push((buffer.read(cx).remote_id(), ranges_for_buffer.clone()));
+                let (new_ranges, _) = multibuffer.set_excerpts_for_path(
+                    PathKey::for_buffer(&buffer, cx),
+                    buffer.clone(),
+                    ranges_for_buffer,
+                    context_lines,
+                    cx,
+                );
+                ranges.extend(new_ranges)
+            }
+
+            multibuffer.with_title(title)
+        });
+        let existing = workspace.active_pane().update(cx, |pane, cx| {
+            pane.items()
+                .filter_map(|item| item.downcast::<Editor>())
+                .find(|editor| {
+                    editor
+                        .read(cx)
+                        .lookup_key
+                        .as_ref()
+                        .and_then(|it| {
+                            it.downcast_ref::<(String, Vec<(BufferId, Vec<Range<Point>>)>)>()
+                        })
+                        .is_some_and(|it| *it == key)
+                })
+        });
+        let editor = existing.unwrap_or_else(|| {
+            cx.new(|cx| {
+                let mut editor = Editor::for_multibuffer(
+                    excerpt_buffer,
+                    Some(workspace.project().clone()),
+                    window,
+                    cx,
+                );
+                editor.lookup_key = Some(Box::new(key));
+                editor
+            })
+        });
+
+        editor.update(cx, |editor, cx| {
+            match multibuffer_selection_mode {
+                MultibufferSelectionMode::First => {
+                    if let Some(first_range) = ranges.first() {
+                        editor.change_selections(
+                            SelectionEffects::no_scroll(),
+                            window,
+                            cx,
+                            |selections| {
+                                selections.clear_disjoint();
+                                selections
+                                    .select_anchor_ranges(std::iter::once(first_range.clone()));
+                            },
+                        );
+                    }
+                    editor.highlight_background::<Self>(
+                        &ranges,
+                        |theme| theme.colors().editor_highlighted_line_background,
+                        cx,
+                    );
+                }
+                MultibufferSelectionMode::All => {
+                    editor.change_selections(
+                        SelectionEffects::no_scroll(),
+                        window,
+                        cx,
+                        |selections| {
+                            selections.clear_disjoint();
+                            selections.select_anchor_ranges(ranges.clone());
+                        },
+                    );
+                }
+            }
+            editor.register_buffers_with_language_servers(cx);
+        });
+
+        let item = Box::new(editor);
+
+        if split {
+            workspace.split_item(SplitDirection::Right, item, window, cx);
+        } else {
+            workspace.add_item_to_active_pane(item, None, true, window, cx);
+        }
+    }
+
     /// Adds a row highlight for the given range. If a row has multiple highlights, the
     /// last highlight added will be used.
     ///

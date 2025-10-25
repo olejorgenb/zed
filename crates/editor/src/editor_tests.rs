@@ -26849,6 +26849,81 @@ async fn test_race_in_multibuffer_save(cx: &mut TestAppContext) {
 
     save.await.unwrap();
     cx.update(|_, cx| assert!(editor.is_dirty(cx)));
+async fn test_open_navigation_history_in_multibuffer(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+
+
+    let fs = FakeFs::new(cx.executor());
+    let project = Project::test(fs, [], cx).await;
+    let workspace = cx.add_window(|window, cx| Workspace::test_new(project, window, cx));
+    let pane = workspace
+        .update(cx, |workspace, _, _| workspace.active_pane().clone())
+        .unwrap();
+
+    let editor = workspace.update(cx, |_, window, cx| {
+        cx.new(|cx| {
+            let buffer = MultiBuffer::build_simple("line 1\nline 2\nline 3\nline 4\nline 5\nline 6\nline 7\nline 8\nline 9\nline 10\nline 11\nline 12\nline 13\nline 14\nline 15\nline 16\nline 17\nline 18\nline 19\nline 20\nline 21\nline 22\nline 23\nline 24\nline 25\nline 26\nline 27\nline 28\nline 29\nline 30\nline 31\nline 32\nline 33\nline 34\nline 35\nline 36\nline 37\nline 38\nline 39\nline 40\nline 41\nline 42\nline 43\nline 44\nline 45\nline 46\nline 47\nline 48\nline 49\nline 50\nline 51\nline 52\nline 53\nline 54\nline 55\nline 56\nline 57\nline 58\nline 59\nline 60\nline 61\nline 62\nline 63\nline 64\nline 65\nline 66\nline 67\nline 68\nline 69\nline 70\nline 71\nline 72\nline 73\nline 74\nline 75\nline 76\nline 77\nline 78\nline 79\nline 80\nline 81\nline 82\nline 83\nline 84\nline 85\nline 86\nline 87\nline 88\nline 89\nline 90\nline 91\nline 92\nline 93\nline 94\nline 95\nline 96\nline 97\nline 98\nline 99\nline 100\nline 101\nline 102\nline 103\nline 104\nline 105\nline 106\nline 107\nline 108\nline 109\nline 110", cx);
+            let mut editor = build_editor(buffer, window, cx);
+            let handle = cx.entity();
+            editor.set_nav_history(Some(pane.read(cx).nav_history_for_item(&handle)));
+
+            // Create some navigation history by making large cursor movements
+            editor.change_selections(SelectionEffects::no_scroll(), window, cx, |s| {
+                s.select_display_ranges([
+                    DisplayPoint::new(DisplayRow(1), 0)..DisplayPoint::new(DisplayRow(1), 0)
+                ])
+            });
+
+            // Move cursor far to create navigation entry
+            editor.change_selections(SelectionEffects::no_scroll(), window, cx, |s| {
+                s.select_display_ranges([
+                    DisplayPoint::new(DisplayRow(50), 2)..DisplayPoint::new(DisplayRow(50), 2)
+                ])
+            });
+
+            // Move cursor far again to create another navigation entry
+            editor.change_selections(SelectionEffects::no_scroll(), window, cx, |s| {
+                s.select_display_ranges([
+                    DisplayPoint::new(DisplayRow(100), 1)..DisplayPoint::new(DisplayRow(100), 1)
+                ])
+            });
+
+            editor
+        })
+    }).unwrap();
+
+    // Test the action with default context lines
+    let _ = workspace.update(cx, |_, window, cx| {
+        let action = OpenNavigationHistoryInMultibuffer { context_lines: None };
+        editor.update(cx, |editor, cx| {
+            editor.open_navigation_history_in_multibuffer(&action, window, cx);
+        });
+    });
+
+    // Test the action with custom context lines
+    let _ = workspace.update(cx, |_, window, cx| {
+        let action_custom = OpenNavigationHistoryInMultibuffer { context_lines: Some(5) };
+        editor.update(cx, |editor, cx| {
+            editor.open_navigation_history_in_multibuffer(&action_custom, window, cx);
+        });
+    });
+
+    // Test with empty navigation history
+    let empty_editor = workspace.update(cx, |_, window, cx| {
+        cx.new(|cx| {
+            let buffer = MultiBuffer::build_simple("no history here", cx);
+            build_editor(buffer, window, cx)
+        })
+    }).unwrap();
+
+    let _ = workspace.update(cx, |_, window, cx| {
+        let action_empty = OpenNavigationHistoryInMultibuffer { context_lines: None };
+        empty_editor.update(cx, |editor, cx| {
+            // This should handle empty history gracefully without panicking
+            editor.open_navigation_history_in_multibuffer(&action_empty, window, cx);
+        });
+    });
 }
 
 #[track_caller]
