@@ -1,0 +1,12 @@
+diff --git a/crates/gpui/src/window.rs b/crates/gpui/src/window.rs
+index 0791dcc621..e9113aa779 100644
+--- a/crates/gpui/src/window.rs
++++ b/crates/gpui/src/window.rs
+@@ -3883,6 +3883,7 @@ impl Window {
+             .unwrap_or_else(|| self.rendered_frame.dispatch_tree.root_node_id())
+     }
+ 
++    // MARK: Key function for action dispatching
+     fn dispatch_action_on_node(
+         &mut self,
+         node_id: DispatchNodeId,
