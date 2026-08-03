@@ -1,0 +1,76 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    echo "Usage: $0 <tag> [main-ref]" >&2
+    echo >&2
+    echo "Release tags (e.g. v1.8.2) live on stable branches whose commits are" >&2
+    echo "cherry-picks of PRs merged to main, so the tag itself usually isn't" >&2
+    echo "reachable from main. This walks back through the release branch's" >&2
+    echo "commits, newest first, until it finds one whose original PR number" >&2
+    echo "is also merged on main, and prints that main commit's SHA." >&2
+    echo >&2
+    echo "main-ref defaults to the first of: main, upstream/main, origin/main" >&2
+    exit 1
+}
+
+if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+    usage
+fi
+
+TAG="$1"
+
+if ! git rev-parse --verify --quiet "${TAG}^{commit}" >/dev/null; then
+    echo "error: tag/ref '${TAG}' not found" >&2
+    exit 1
+fi
+
+if [ "$#" -eq 2 ]; then
+    MAIN_REF="$2"
+    if ! git rev-parse --verify --quiet "${MAIN_REF}" >/dev/null; then
+        echo "error: main ref '${MAIN_REF}' not found" >&2
+        exit 1
+    fi
+else
+    MAIN_REF=""
+    for candidate in main upstream/main origin/main; do
+        if git rev-parse --verify --quiet "${candidate}" >/dev/null; then
+            MAIN_REF="${candidate}"
+            break
+        fi
+    done
+    if [ -z "${MAIN_REF}" ]; then
+        echo "error: couldn't find a 'main' ref; pass one explicitly" >&2
+        exit 1
+    fi
+fi
+
+echo "Using main ref: ${MAIN_REF}" >&2
+
+if git merge-base --is-ancestor "${TAG}" "${MAIN_REF}"; then
+    echo "note: ${TAG} is already an ancestor of ${MAIN_REF}" >&2
+    git rev-parse "${TAG}"
+    exit 0
+fi
+
+MERGE_BASE=$(git merge-base "${TAG}" "${MAIN_REF}")
+
+# Newest-first: commits reachable from TAG but not from its merge-base with
+# main, i.e. everything that only lives on the release branch.
+while IFS=$'\t' read -r sha subject; do
+    if [[ "${subject}" =~ \(#([0-9]+)\) ]]; then
+        pr="${BASH_REMATCH[1]}"
+        match=$(git log "${MAIN_REF}" --format='%H %s' | grep -F "(#${pr})" | head -1 | cut -d' ' -f1)
+        if [ -n "${match}" ]; then
+            echo "release commit: ${sha}  ${subject}" >&2
+            echo "  -> traced to original PR #${pr} on ${MAIN_REF}" >&2
+            echo "${match}"
+            exit 0
+        fi
+    fi
+done < <(git log --format='%H%x09%s' "${MERGE_BASE}..${TAG}")
+
+echo "warning: no cherry-picked commit on ${TAG} could be traced back to ${MAIN_REF};" >&2
+echo "         falling back to the structural merge-base (where the release" >&2
+echo "         branch actually diverged from ${MAIN_REF})" >&2
+echo "${MERGE_BASE}"
