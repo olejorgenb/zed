@@ -679,13 +679,49 @@ pub struct InlineBlameSettings {
 }
 
 #[with_fallible_options]
-#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema, MergeFrom)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema, MergeFrom)]
 #[serde(rename_all = "snake_case")]
 pub struct BlameSettings {
     /// Whether to show the avatar of the author of the commit.
     ///
     /// Default: true
     pub show_avatar: Option<bool>,
+    /// How to display the commit author's name in the blame gutter.
+    ///
+    /// Default: full
+    pub author_name_style: Option<BlameAuthorNameStyle>,
+    /// How to display the commit date in the blame gutter.
+    ///
+    /// Default: relative
+    pub date_style: Option<BlameDateStyle>,
+    /// The format string used to render the commit date when `date_style` is `absolute`.
+    /// Uses the `time` crate's format description syntax, e.g. `[year]-[month]-[day]`.
+    /// Falls back to the platform's locale-formatted date if unset or invalid.
+    ///
+    /// Default: null
+    pub date_format: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema, MergeFrom)]
+#[serde(rename_all = "snake_case")]
+pub enum BlameAuthorNameStyle {
+    /// Show the full author name, truncated if too long.
+    #[default]
+    Full,
+    /// Show the author's initials, e.g. "Ole Jørgen Brønner" -> "OJB".
+    Initials,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Default, Serialize, Deserialize, JsonSchema, MergeFrom)]
+#[serde(rename_all = "snake_case")]
+pub enum BlameDateStyle {
+    /// Show the commit date as a relative time, e.g. "1 year, 5 months ago".
+    #[default]
+    Relative,
+    /// Show the commit date as a compact relative time, e.g. "1y 5mo ago".
+    RelativeCompact,
+    /// Show the commit date as an absolute date, using `date_format` if set.
+    Absolute,
 }
 
 #[with_fallible_options]

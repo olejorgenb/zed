@@ -1,5 +1,8 @@
 use crate::{
-    commit_tooltip::{CommitAvatar, CommitTooltip, commit_tag_chips},
+    commit_tooltip::{
+        CommitAvatar, CommitTooltip, blame_entry_relative_timestamp, blame_entry_timestamp,
+        commit_tag_chips,
+    },
     commit_view::CommitView,
 };
 use editor::{BlameRenderer, Editor, hover_markdown_style};
@@ -11,18 +14,33 @@ use gpui::{
 use markdown::{Markdown, MarkdownElement};
 use project::{
     git_store::Repository,
-    project_settings::{InlineBlameLocation, ProjectSettings},
+    project_settings::{
+        BlameAuthorNameStyle, BlameDateStyle, BlameSettings, InlineBlameLocation, ProjectSettings,
+    },
 };
 use settings::Settings as _;
+use std::sync::LazyLock;
 use theme_settings::ThemeSettings;
 use time::OffsetDateTime;
 use ui::{ContextMenu, CopyButton, Divider, prelude::*, tooltip_container};
 use workspace::Workspace;
 
 const GIT_BLAME_MAX_AUTHOR_CHARS_DISPLAYED: usize = 20;
+/// Also the width [`GitBlameRenderer::max_author_length`] reserves for the initials column.
+const GIT_BLAME_MAX_AUTHOR_INITIALS_CHARS: usize = 4;
 const GIT_BLAME_GUTTER_MARGIN: Rems = rems(0.5);
 const GIT_BLAME_GUTTER_GAP: Rems = rems(0.5);
 const GIT_BLAME_AVATAR_SIZE: Rems = rems(1.);
+/// Sample used to reserve gutter width for absolute dates. A user `date_format` renders month and
+/// weekday names in English, where September and Wednesday are the widest, and every numeric
+/// component here is two digits, so it is an upper bound for those. The platform's own date format
+/// is numeric on Linux and locale-dependent elsewhere, so for that one it is an approximation.
+const GIT_BLAME_DATE_WIDTH_SAMPLE: OffsetDateTime =
+    time::macros::datetime!(2024-09-25 12:59:59 UTC);
+/// Cached because on macOS and Windows this calls into the platform's date formatter, while the
+/// gutter width is recomputed on every layout.
+static GIT_BLAME_LOCALIZED_DATE_WIDTH: LazyLock<usize> =
+    LazyLock::new(|| format_blame_date(GIT_BLAME_DATE_WIDTH_SAMPLE, None).chars().count());
 
 pub struct GitBlameRenderer;
 
@@ -125,8 +143,27 @@ impl workspace::StatusItemView for GitBlameStatus {
 }
 
 impl BlameRenderer for GitBlameRenderer {
-    fn max_author_length(&self) -> usize {
-        GIT_BLAME_MAX_AUTHOR_CHARS_DISPLAYED
+    fn max_author_length(&self, cx: &App) -> usize {
+        match ProjectSettings::get_global(cx).git.blame.author_name_style {
+            BlameAuthorNameStyle::Full => GIT_BLAME_MAX_AUTHOR_CHARS_DISPLAYED,
+            BlameAuthorNameStyle::Initials => GIT_BLAME_MAX_AUTHOR_INITIALS_CHARS,
+        }
+    }
+
+    fn max_timestamp_length(&self, cx: &App) -> usize {
+        let blame_settings = &ProjectSettings::get_global(cx).git.blame;
+        match blame_settings.date_style {
+            // Both relative formats spell out years and months together below five years, so
+            // "4 years, 11 months ago" is their widest output.
+            BlameDateStyle::Relative => "4 years, 11 months ago".len(),
+            BlameDateStyle::RelativeCompact => "4y 11mo ago".len(),
+            BlameDateStyle::Absolute => match blame_settings.date_format.as_deref() {
+                Some(format) => format_blame_date(GIT_BLAME_DATE_WIDTH_SAMPLE, Some(format))
+                    .chars()
+                    .count(),
+                None => *GIT_BLAME_LOCALIZED_DATE_WIDTH,
+            },
+        }
     }
 
     fn blame_entry_non_text_width(&self, window: &Window, cx: &App) -> Pixels {
@@ -156,12 +193,15 @@ impl BlameRenderer for GitBlameRenderer {
         window: &mut Window,
         cx: &mut App,
     ) -> Option<AnyElement> {
-        let relative_timestamp = blame_entry_relative_timestamp(&blame_entry);
+        let blame_settings = &ProjectSettings::get_global(cx).git.blame;
+        let timestamp = format_blame_gutter_date(&blame_entry, blame_settings);
         let short_commit_id = blame_entry.sha.display_short();
-        let author_name = blame_entry.author.as_deref().unwrap_or("<no name>");
-        let name = util::truncate_and_trailoff(author_name, GIT_BLAME_MAX_AUTHOR_CHARS_DISPLAYED);
+        let name = display_author_name(
+            blame_entry.author.as_deref(),
+            blame_settings.author_name_style,
+        );
 
-        let avatar = if ProjectSettings::get_global(cx).git.blame.show_avatar {
+        let avatar = if blame_settings.show_avatar {
             let author_email = blame_entry.author_mail.as_ref().map(|email| {
                 SharedString::from(
                     email
@@ -202,7 +242,7 @@ impl BlameRenderer for GitBlameRenderer {
                                 .children(avatar)
                                 .child(name),
                         )
-                        .child(relative_timestamp)
+                        .child(timestamp)
                         .hover(|style| style.bg(cx.theme().colors().element_hover))
                         .cursor_pointer()
                         .on_mouse_down(MouseButton::Right, {
@@ -223,12 +263,12 @@ impl BlameRenderer for GitBlameRenderer {
                             }
                         })
                         .on_click({
-                            let blame_entry = blame_entry.clone();
+                            let commit_sha = blame_entry.sha.to_string();
                             let repository = repository.clone();
                             let workspace = workspace.clone();
                             move |_, window, cx| {
                                 CommitView::open(
-                                    blame_entry.sha.to_string(),
+                                    commit_sha.clone(),
                                     repository.downgrade(),
                                     workspace.clone(),
                                     None,
@@ -539,18 +579,156 @@ fn deploy_blame_entry_context_menu(
     });
 }
 
-fn blame_entry_relative_timestamp(blame_entry: &BlameEntry) -> String {
-    match blame_entry.author_offset_date_time() {
-        Ok(timestamp) => {
+/// Formats the date shown in the blame gutter column, honoring `git.blame.date_style`.
+fn format_blame_gutter_date(blame_entry: &BlameEntry, settings: &BlameSettings) -> String {
+    match settings.date_style {
+        BlameDateStyle::Relative => {
+            blame_entry_timestamp(blame_entry, time_format::TimestampFormat::Relative)
+        }
+        BlameDateStyle::RelativeCompact => {
+            blame_entry_timestamp(blame_entry, time_format::TimestampFormat::RelativeCompact)
+        }
+        BlameDateStyle::Absolute => {
+            let Ok(timestamp) = blame_entry.author_offset_date_time() else {
+                return "Error parsing date".to_string();
+            };
             let local_offset =
                 time::UtcOffset::current_local_offset().unwrap_or(time::UtcOffset::UTC);
-            time_format::format_localized_timestamp(
-                timestamp,
-                time::OffsetDateTime::now_utc(),
-                local_offset,
-                time_format::TimestampFormat::Relative,
+            format_blame_date(
+                timestamp.to_offset(local_offset),
+                settings.date_format.as_deref(),
             )
         }
-        Err(_) => "Error parsing date".to_string(),
+    }
+}
+
+/// Renders a date without a time-of-day component. `TimestampFormat::MediumAbsolute` would append
+/// the clock time on Linux and Windows, which defeats the point of a narrower gutter.
+///
+/// Shared with [`GitBlameRenderer::max_timestamp_length`] so the reserved width is measured on the
+/// same code path that draws.
+fn format_blame_date(
+    timestamp: OffsetDateTime,
+    date_format: Option<&time::format_description::OwnedFormatItem>,
+) -> String {
+    // `format_date_medium` only consults its reference for the "Today"/"Yesterday" forms, which
+    // the `false` below turns off, so the timestamp can stand in as its own reference.
+    match date_format {
+        // `ProjectSettings` only keeps formats it has verified can render an `OffsetDateTime`, so
+        // this falls back only if that probe and this call somehow disagree.
+        Some(format) => timestamp
+            .format(format)
+            .unwrap_or_else(|_| time_format::format_date_medium(timestamp, timestamp, false)),
+        None => time_format::format_date_medium(timestamp, timestamp, false),
+    }
+}
+
+/// Renders the author name for the blame gutter column, honoring `git.blame.author_name_style`.
+fn display_author_name(author_name: Option<&str>, style: BlameAuthorNameStyle) -> String {
+    let Some(author_name) = author_name else {
+        return match style {
+            BlameAuthorNameStyle::Full => "<no name>".to_string(),
+            // The initials column only reserves GIT_BLAME_MAX_AUTHOR_INITIALS_CHARS characters,
+            // which "<no name>" would overflow.
+            BlameAuthorNameStyle::Initials => "?".to_string(),
+        };
+    };
+    match style {
+        BlameAuthorNameStyle::Full => {
+            util::truncate_and_trailoff(author_name, GIT_BLAME_MAX_AUTHOR_CHARS_DISPLAYED)
+        }
+        BlameAuthorNameStyle::Initials => author_initials(author_name),
+    }
+}
+
+/// Builds initials from the first character of each whitespace-separated word, e.g.
+/// "Ole Jørgen Brønner" -> "OJB", capped at [`GIT_BLAME_MAX_AUTHOR_INITIALS_CHARS`] characters.
+/// Single-word names (e.g. "dependabot[bot]") fall back to their first two characters.
+fn author_initials(author_name: &str) -> String {
+    let words: Vec<&str> = author_name.split_whitespace().collect();
+    let initials: String = match words.as_slice() {
+        [] => String::new(),
+        [single] => single
+            .chars()
+            .take(2)
+            .flat_map(char::to_uppercase)
+            .collect(),
+        multiple => multiple
+            .iter()
+            .filter_map(|word| word.chars().next())
+            .flat_map(char::to_uppercase)
+            .collect(),
+    };
+    // `char::to_uppercase` is one-to-many ('ß' -> "SS"), so the cap has to be applied after
+    // expanding, not by counting words - the gutter reserves exactly this many characters.
+    initials
+        .chars()
+        .take(GIT_BLAME_MAX_AUTHOR_INITIALS_CHARS)
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_author_initials() {
+        assert_eq!(author_initials("Ole Jørgen Brønner"), "OJB");
+        assert_eq!(author_initials("ada lovelace"), "AL");
+        assert_eq!(author_initials("dependabot[bot]"), "DE");
+        assert_eq!(author_initials("  "), "");
+        // `to_uppercase` expands 'ß' into two characters, so the cap has to survive that.
+        assert_eq!(author_initials("ßarah ßmith ßones ßrown"), "SSSS");
+        assert_eq!(
+            author_initials("a b c d e f g").chars().count(),
+            GIT_BLAME_MAX_AUTHOR_INITIALS_CHARS
+        );
+    }
+
+    #[test]
+    fn test_missing_author_fits_the_reserved_initials_width() {
+        let placeholder = display_author_name(None, BlameAuthorNameStyle::Initials);
+        assert!(placeholder.chars().count() <= GIT_BLAME_MAX_AUTHOR_INITIALS_CHARS);
+        assert_eq!(
+            display_author_name(Some("Ada Lovelace"), BlameAuthorNameStyle::Full),
+            "Ada Lovelace"
+        );
+    }
+
+    #[test]
+    fn test_absolute_date_width_reservation_covers_rendered_dates() {
+        let reserved = *GIT_BLAME_LOCALIZED_DATE_WIDTH;
+        for timestamp in [
+            GIT_BLAME_DATE_WIDTH_SAMPLE,
+            time::macros::datetime!(2025-12-31 23:59:59 UTC),
+            time::macros::datetime!(1970-01-01 00:00:00 UTC),
+            time::macros::datetime!(2026-01-14 09:00:00 UTC),
+        ] {
+            let rendered = format_blame_date(timestamp, None);
+            assert!(
+                rendered.chars().count() <= reserved,
+                "{rendered:?} is wider than the {reserved} characters reserved for it"
+            );
+        }
+    }
+
+    #[test]
+    fn test_custom_date_format_is_measured_on_the_rendering_path() {
+        let format = time::format_description::parse_owned::<2>("[year]-[month]-[day]")
+            .expect("valid format description");
+
+        assert_eq!(
+            format_blame_date(
+                time::macros::datetime!(2024-01-02 12:59:59 UTC),
+                Some(&format)
+            ),
+            "2024-01-02"
+        );
+        assert_eq!(
+            format_blame_date(GIT_BLAME_DATE_WIDTH_SAMPLE, Some(&format))
+                .chars()
+                .count(),
+            "2024-09-25".len()
+        );
     }
 }

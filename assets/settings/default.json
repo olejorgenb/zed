@@ -1695,6 +1695,9 @@
     },
     "blame": {
       "show_avatar": true,
+      "author_name_style": "full",
+      "date_style": "relative",
+      "date_format": null,
     },
     // Control which information is shown in the branch picker.
     "branch_picker": {

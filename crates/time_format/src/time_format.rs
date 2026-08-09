@@ -13,6 +13,8 @@ pub enum TimestampFormat {
     MediumAbsolute,
     /// Formats the timestamp as a relative time, e.g. "just now", "1 minute ago", "2 hours ago", "2 months ago".
     Relative,
+    /// Formats the timestamp as a compact relative time, e.g. "now", "1m ago", "2h ago", "2mo ago".
+    RelativeCompact,
 }
 
 /// Formats a timestamp, which respects the user's date and time preferences/custom format.
@@ -39,6 +41,8 @@ pub fn format_local_timestamp(
         TimestampFormat::MediumAbsolute => format_absolute_timestamp_medium(timestamp, reference),
         TimestampFormat::Relative => format_relative_time(timestamp, reference)
             .unwrap_or_else(|| format_relative_date(timestamp, reference)),
+        TimestampFormat::RelativeCompact => format_relative_time_compact(timestamp, reference)
+            .unwrap_or_else(|| format_relative_date_compact(timestamp, reference)),
     }
 }
 
@@ -318,6 +322,69 @@ fn format_compound_year_month(month_diff: usize) -> String {
     } else {
         let month_unit = if months == 1 { "month" } else { "months" };
         format!("{years} {year_unit}, {months} {month_unit} ago")
+    }
+}
+
+/// Compact counterpart of [`format_relative_time`]; the two must agree on their thresholds, so
+/// change them together.
+fn format_relative_time_compact(
+    timestamp: OffsetDateTime,
+    reference: OffsetDateTime,
+) -> Option<String> {
+    let difference = reference - timestamp;
+    let minutes = difference.whole_minutes();
+    match minutes {
+        0 => Some("now".to_string()),
+        1..=59 => Some(format!("{minutes}m ago")),
+        _ => {
+            let hours = difference.whole_hours();
+            match hours {
+                1..=23 => Some(format!("{hours}h ago")),
+                _ => None,
+            }
+        }
+    }
+}
+
+/// Compact counterpart of [`format_relative_date`]; the two must agree on their thresholds, so
+/// change them together.
+fn format_relative_date_compact(timestamp: OffsetDateTime, reference: OffsetDateTime) -> String {
+    let timestamp_date = timestamp.date();
+    let reference_date = reference.date();
+    let difference = reference_date - timestamp_date;
+    let days = difference.whole_days();
+    match days {
+        0 => "today".to_string(),
+        1..=6 => format!("{days}d ago"),
+        _ => {
+            let weeks = difference.whole_weeks();
+            match weeks {
+                1..=4 => format!("{weeks}w ago"),
+                _ => {
+                    let month_diff = calculate_month_difference(timestamp, reference);
+                    match month_diff {
+                        0..=1 => "1mo ago".to_string(),
+                        2..=11 => format!("{month_diff}mo ago"),
+                        12..60 => format_compound_year_month_compact(month_diff),
+                        months => {
+                            let years = (months + 6) / 12;
+                            format!("{years}y ago")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Compact counterpart of [`format_compound_year_month`].
+fn format_compound_year_month_compact(month_diff: usize) -> String {
+    let years = month_diff / 12;
+    let months = month_diff % 12;
+    if months == 0 {
+        format!("{years}y ago")
+    } else {
+        format!("{years}y {months}mo ago")
     }
 }
 
@@ -1137,6 +1204,81 @@ mod tests {
         assert_eq!(
             calculate_month_difference(create_offset_datetime(1987, 3, 12, 23, 0, 0), reference),
             37
+        );
+    }
+
+    #[test]
+    fn test_relative_compact_format_minutes_and_hours() {
+        let reference = create_offset_datetime(1990, 4, 12, 23, 0, 0);
+
+        assert_eq!(
+            format_relative_time_compact(reference, reference),
+            Some("now".to_string())
+        );
+        assert_eq!(
+            format_relative_time_compact(create_offset_datetime(1990, 4, 12, 22, 59, 0), reference),
+            Some("1m ago".to_string())
+        );
+        assert_eq!(
+            format_relative_time_compact(create_offset_datetime(1990, 4, 12, 22, 15, 0), reference),
+            Some("45m ago".to_string())
+        );
+        assert_eq!(
+            format_relative_time_compact(create_offset_datetime(1990, 4, 12, 22, 0, 0), reference),
+            Some("1h ago".to_string())
+        );
+        assert_eq!(
+            format_relative_time_compact(create_offset_datetime(1990, 4, 12, 0, 0, 0), reference),
+            Some("23h ago".to_string())
+        );
+        assert_eq!(
+            format_relative_time_compact(create_offset_datetime(1990, 4, 11, 22, 0, 0), reference),
+            None
+        );
+    }
+
+    #[test]
+    fn test_relative_compact_format_days_weeks_months_years() {
+        let reference = create_offset_datetime(1990, 4, 12, 23, 0, 0);
+
+        assert_eq!(
+            format_relative_date_compact(reference, reference),
+            "today".to_string()
+        );
+        assert_eq!(
+            format_relative_date_compact(create_offset_datetime(1990, 4, 11, 23, 0, 0), reference),
+            "1d ago".to_string()
+        );
+        assert_eq!(
+            format_relative_date_compact(create_offset_datetime(1990, 4, 6, 23, 0, 0), reference),
+            "6d ago".to_string()
+        );
+        assert_eq!(
+            format_relative_date_compact(create_offset_datetime(1990, 4, 5, 23, 0, 0), reference),
+            "1w ago".to_string()
+        );
+        assert_eq!(
+            format_relative_date_compact(create_offset_datetime(1990, 3, 15, 23, 0, 0), reference),
+            "4w ago".to_string()
+        );
+        assert_eq!(
+            format_relative_date_compact(create_offset_datetime(1990, 1, 12, 23, 0, 0), reference),
+            "3mo ago".to_string()
+        );
+        // 22 months: compound form.
+        assert_eq!(
+            format_relative_date_compact(create_offset_datetime(1988, 6, 12, 23, 0, 0), reference),
+            "1y 10mo ago".to_string()
+        );
+        // Exactly 2 years, no remainder.
+        assert_eq!(
+            format_relative_date_compact(create_offset_datetime(1988, 4, 12, 23, 0, 0), reference),
+            "2y ago".to_string()
+        );
+        // 5 years exactly: switches to year-only.
+        assert_eq!(
+            format_relative_date_compact(create_offset_datetime(1985, 4, 12, 23, 0, 0), reference),
+            "5y ago".to_string()
         );
     }
 

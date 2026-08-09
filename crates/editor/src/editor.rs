@@ -11641,11 +11641,10 @@ impl EditorSnapshot {
                 self.git_blame_gutter_max_author_length
                     .map(|max_author_length| {
                         let renderer = cx.global::<GlobalBlameRenderer>().0.clone();
-                        const MAX_RELATIVE_TIMESTAMP: &str = "2 years, 11 months ago";
 
-                        let max_char_count = max_author_length.min(renderer.max_author_length())
+                        let max_char_count = max_author_length.min(renderer.max_author_length(cx))
                             + ::git::SHORT_SHA_LENGTH
-                            + MAX_RELATIVE_TIMESTAMP.len();
+                            + renderer.max_timestamp_length(cx);
 
                         ch_advance * max_char_count
                             + renderer.blame_entry_non_text_width(window, cx)
