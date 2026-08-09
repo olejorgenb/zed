@@ -454,7 +454,10 @@ impl Render for CommitTooltip {
     }
 }
 
-fn blame_entry_timestamp(blame_entry: &BlameEntry, format: time_format::TimestampFormat) -> String {
+pub(crate) fn blame_entry_timestamp(
+    blame_entry: &BlameEntry,
+    format: time_format::TimestampFormat,
+) -> String {
     match blame_entry.author_offset_date_time() {
         Ok(timestamp) => {
             let local_offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);

@@ -11025,8 +11025,12 @@ mod tests {
         struct FixedWidthBlameRenderer;
 
         impl BlameRenderer for FixedWidthBlameRenderer {
-            fn max_author_length(&self) -> usize {
+            fn max_author_length(&self, _: &App) -> usize {
                 20
+            }
+
+            fn max_timestamp_length(&self, _: &App) -> usize {
+                0
             }
 
             fn render_blame_entry(

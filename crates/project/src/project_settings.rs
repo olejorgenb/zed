@@ -580,12 +580,69 @@ pub struct InlineBlameSettings {
     pub show_commit_summary: bool,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct BlameSettings {
     /// Whether to show the avatar of the author of the commit.
     ///
     /// Default: true
     pub show_avatar: bool,
+    /// How to display the commit author's name in the blame gutter.
+    ///
+    /// Default: full
+    pub author_name_style: BlameAuthorNameStyle,
+    /// How to display the commit date in the blame gutter.
+    ///
+    /// Default: relative
+    pub date_style: BlameDateStyle,
+    /// Parsed from the user-supplied `date_format` string, used when `date_style` is `Absolute`.
+    /// `None` if unset or invalid, in which case a locale-formatted absolute date is used instead.
+    pub date_format: Option<Arc<time::format_description::OwnedFormatItem>>,
+}
+
+/// A description that parses can still fail to render a particular value, so formats are probed
+/// once here rather than in the blame gutter, which would otherwise have to handle the failure
+/// once per line per frame - and would reserve gutter width for a date it cannot draw.
+const BLAME_DATE_FORMAT_PROBE: time::OffsetDateTime =
+    time::macros::datetime!(2024-09-25 12:59:59 UTC);
+
+fn parse_blame_date_format(format: &str) -> Option<Arc<time::format_description::OwnedFormatItem>> {
+    let format = time::format_description::parse_owned::<2>(format).log_err()?;
+    BLAME_DATE_FORMAT_PROBE.format(&format).log_err()?;
+    Some(Arc::new(format))
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BlameAuthorNameStyle {
+    #[default]
+    Full,
+    Initials,
+}
+
+impl From<settings::BlameAuthorNameStyle> for BlameAuthorNameStyle {
+    fn from(style: settings::BlameAuthorNameStyle) -> Self {
+        match style {
+            settings::BlameAuthorNameStyle::Full => BlameAuthorNameStyle::Full,
+            settings::BlameAuthorNameStyle::Initials => BlameAuthorNameStyle::Initials,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum BlameDateStyle {
+    #[default]
+    Relative,
+    RelativeCompact,
+    Absolute,
+}
+
+impl From<settings::BlameDateStyle> for BlameDateStyle {
+    fn from(style: settings::BlameDateStyle) -> Self {
+        match style {
+            settings::BlameDateStyle::Relative => BlameDateStyle::Relative,
+            settings::BlameDateStyle::RelativeCompact => BlameDateStyle::RelativeCompact,
+            settings::BlameDateStyle::Absolute => BlameDateStyle::Absolute,
+        }
+    }
 }
 
 impl GitSettings {
@@ -700,9 +757,15 @@ impl Settings for ProjectSettings {
                 }
             },
             blame: {
-                let blame = git.blame.unwrap();
+                let blame = git.blame.as_ref().unwrap();
                 BlameSettings {
                     show_avatar: blame.show_avatar.unwrap(),
+                    author_name_style: blame.author_name_style.unwrap().into(),
+                    date_style: blame.date_style.unwrap().into(),
+                    date_format: blame
+                        .date_format
+                        .as_deref()
+                        .and_then(parse_blame_date_format),
                 }
             },
             branch_picker: {

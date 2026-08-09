@@ -107,7 +107,12 @@ pub struct GitBlame {
 }
 
 pub trait BlameRenderer {
-    fn max_author_length(&self) -> usize;
+    fn max_author_length(&self, cx: &App) -> usize;
+
+    /// The maximum number of characters the rendered timestamp can take up, used to reserve
+    /// gutter width ahead of rendering. Required rather than defaulted: a renderer that draws a
+    /// timestamp but forgets to report its width silently gets a gutter that clips it.
+    fn max_timestamp_length(&self, cx: &App) -> usize;
 
     fn blame_entry_non_text_width(&self, _: &Window, _: &App) -> Pixels {
         Pixels::ZERO
@@ -170,7 +175,11 @@ pub trait BlameRenderer {
 }
 
 impl BlameRenderer for () {
-    fn max_author_length(&self) -> usize {
+    fn max_author_length(&self, _: &App) -> usize {
+        0
+    }
+
+    fn max_timestamp_length(&self, _: &App) -> usize {
         0
     }
 
