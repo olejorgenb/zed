@@ -2764,6 +2764,12 @@ impl Editor {
         if disjoint.len() > 1 {
             key_context.add("multiple_selections");
         }
+        if disjoint
+            .iter()
+            .any(|selection| selection.start != selection.end)
+        {
+            key_context.add("selection");
+        }
         if matches!(
             &self.mode,
             EditorMode::SingleLine | EditorMode::AutoHeight { .. }

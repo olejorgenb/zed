@@ -38296,6 +38296,34 @@ async fn test_end_of_editor_context(cx: &mut TestAppContext) {
 }
 
 #[gpui::test]
+async fn test_selection_context(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let mut cx = EditorTestContext::new(cx).await;
+
+    cx.set_state("liˇne1\nline2");
+    cx.update_editor(|e, window, cx| {
+        assert!(!e.key_context(window, cx).contains("selection"));
+    });
+
+    cx.set_state("li«neˇ»1\nline2");
+    cx.update_editor(|e, window, cx| {
+        assert!(e.key_context(window, cx).contains("selection"));
+    });
+
+    // An empty cursor alongside a non-empty selection still counts.
+    cx.set_state("liˇne1\n«line2ˇ»");
+    cx.update_editor(|e, window, cx| {
+        assert!(e.key_context(window, cx).contains("selection"));
+    });
+
+    cx.set_state("liˇne1\nliˇne2");
+    cx.update_editor(|e, window, cx| {
+        assert!(!e.key_context(window, cx).contains("selection"));
+    });
+}
+
+#[gpui::test]
 async fn test_sticky_scroll(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
     let mut cx = EditorTestContext::new(cx).await;
