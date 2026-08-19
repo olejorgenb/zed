@@ -118,7 +118,7 @@ impl CommandPaletteDB {
     query! {
         async fn write_command_invocation_internal(command_name: String, user_query: String) -> Result<()> {
             INSERT INTO command_invocations (command_name, user_query) VALUES ((?), (?));
-            DELETE FROM command_invocations WHERE id IN (SELECT MIN(id) FROM command_invocations HAVING COUNT(1) > 1000);
+            DELETE FROM command_invocations WHERE id IN (SELECT MIN(id) FROM command_invocations HAVING COUNT(1) > 10000);
         }
     }
 
@@ -230,14 +230,28 @@ mod tests {
     async fn test_handles_max_invocation_entries() {
         let db = CommandPaletteDB::open_test_db("test_handles_max_invocation_entries").await;
 
-        for i in 1..=1001 {
-            db.write_command_invocation("some-command", &i.to_string())
-                .await
-                .unwrap();
-        }
+        // Seeded directly rather than through `write_command_invocation`, because every
+        // invocation re-runs the eviction query's full-table COUNT, making a loop quadratic.
+        db.0.write(|connection| {
+            connection.exec(
+                "WITH RECURSIVE seed(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM seed WHERE i < 9999)
+                 INSERT INTO command_invocations (command_name, user_query) SELECT 'some-command', '' FROM seed",
+            )?()
+        })
+        .await
+        .unwrap();
+
+        // The first write fills the table to the cap, the second one has to evict.
+        db.write_command_invocation("some-command", "")
+            .await
+            .unwrap();
+        db.write_command_invocation("some-command", "")
+            .await
+            .unwrap();
+
         let some_command = db.get_command_usage("some-command").unwrap();
 
         assert!(some_command.is_some());
-        assert_eq!(some_command.expect("is some").invocations, 1000);
+        assert_eq!(some_command.expect("is some").invocations, 10000);
     }
 }
