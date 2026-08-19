@@ -1,0 +1,105 @@
+#!/usr/bin/env bash
+
+# Build this fork and install it as the system `zed`.
+#
+# The build is pinned to the "preview" release channel, which is an unused
+# upstream slot borrowed on purpose: the channel scopes the sqlite database
+# (~/.local/share/zed/db/0-<channel>), so this install keeps its workspace
+# state separate from the "dev" channel that a plain `cargo run` uses.
+# Settings, keymap and extensions are shared regardless — paths.rs has no
+# channel logic. See README-fork.md.
+#
+# The channel is set through $ZED_RELEASE_CHANNEL rather than by editing
+# crates/zed/RELEASE_CHANNEL, so this leaves no diff against upstream.
+#
+# Unlike script/bundle-linux this skips remote_server, the bundled libs, symbol
+# stripping and license generation: none of them matter for a local install.
+# Consequences: no SSH remote projects, and the in-app licenses view is empty.
+
+set -euo pipefail
+
+cd "$(dirname "$0")/.."
+
+CHANNEL="preview"
+APP_ID="dev.zed.Zed-Preview"
+APP_NAME="${ZED_APP_NAME:-Zed Preview}"
+APP_DIR="${ZED_APP_DIR:-$HOME/.local/zed-ole.app}"
+BIN_LINK="$HOME/.local/bin/zed"
+target_dir="${CARGO_TARGET_DIR:-target}"
+
+# Capped by default: a full release build at this machine's natural job count
+# saturates it for the duration. Raise or lower with CARGO_BUILD_JOBS=N.
+export CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-6}"
+
+echo "==> Building ($CHANNEL channel, release, $CARGO_BUILD_JOBS jobs)"
+ZED_RELEASE_CHANNEL="$CHANNEL" cargo build --release --package zed --package cli
+
+# Rename rather than copy: the destination may be a running Zed, and writing
+# over a busy executable fails with ETXTBSY while replacing the directory
+# entry does not.
+install_binary() {
+    local source="$1" destination="$2"
+    mkdir -p "$(dirname "$destination")"
+    cp "$source" "$destination.new"
+    chmod +x "$destination.new"
+    mv -f "$destination.new" "$destination"
+}
+
+echo "==> Installing to $APP_DIR"
+install_binary "$target_dir/release/zed" "$APP_DIR/libexec/zed-editor"
+install_binary "$target_dir/release/cli" "$APP_DIR/bin/zed"
+
+mkdir -p "$(dirname "$BIN_LINK")"
+previous_target="$(readlink "$BIN_LINK" || true)"
+ln -sfn "$APP_DIR/bin/zed" "$BIN_LINK"
+if [ -n "$previous_target" ] && [ "$previous_target" != "$APP_DIR/bin/zed" ]; then
+    echo "    $BIN_LINK was -> $previous_target"
+fi
+
+# This script takes over the `zed` name, which otherwise leaves the upstream
+# install reachable only by full path.
+STABLE_APP_DIR="${ZED_STABLE_APP_DIR:-$HOME/.local/zed.app}"
+if [ -x "$STABLE_APP_DIR/bin/zed" ]; then
+    ln -sfn "$STABLE_APP_DIR/bin/zed" "$HOME/.local/bin/zed-stable"
+else
+    echo "    note: no stock Zed at $STABLE_APP_DIR, skipping zed-stable"
+fi
+
+icon_dir="$APP_DIR/share/icons/hicolor"
+mkdir -p "$icon_dir/512x512/apps" "$icon_dir/1024x1024/apps"
+cp "crates/zed/resources/app-icon-$CHANNEL.png" "$icon_dir/512x512/apps/zed.png"
+cp "crates/zed/resources/app-icon-$CHANNEL@2x.png" "$icon_dir/1024x1024/apps/zed.png"
+
+desktop_file="$HOME/.local/share/applications/$APP_ID.desktop"
+if command -v envsubst >/dev/null 2>&1; then
+    mkdir -p "$(dirname "$desktop_file")"
+    APP_NAME="$APP_NAME" \
+    APP_CLI="$APP_DIR/bin/zed" \
+    APP_ICON="$icon_dir/512x512/apps/zed.png" \
+    APP_ARGS="%U" \
+    DO_STARTUP_NOTIFY="true" \
+        envsubst < "crates/zed/resources/zed.desktop.in" > "$desktop_file"
+    chmod +x "$desktop_file"
+else
+    echo "    warning: envsubst not found, skipping $desktop_file"
+fi
+
+settings_file="${XDG_CONFIG_HOME:-$HOME/.config}/zed/settings.json"
+if ! grep -qE '"auto_update"[[:space:]]*:[[:space:]]*false' "$settings_file" 2>/dev/null; then
+    echo
+    echo "!!  \"auto_update\" is not disabled in $settings_file"
+    echo "!!  The $CHANNEL channel polls for updates, so upstream Zed will"
+    echo "!!  eventually overwrite this build. Add: \"auto_update\": false"
+fi
+
+case ":$PATH:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) echo "    note: $HOME/.local/bin is not on your PATH" ;;
+esac
+
+echo
+# Via the CLI rather than the editor binary: only the CLI accepts --version, and
+# it resolves ../libexec/zed-editor the same way a real launch does.
+echo "Installed: $("$APP_DIR/bin/zed" --version || echo "(could not query version)")"
+echo "Wayland app id is now $APP_ID (window rules keyed on the old id need updating)."
+echo "To go back to stock Zed: ln -sfn ~/.local/zed.app/bin/zed $BIN_LINK"
