@@ -1239,6 +1239,8 @@
     // tool action.
     // "primary_screen" - Show the notification only on your primary screen (default)
     // "all_screens" - Show these notifications on all screens
+    // "urgent_only" - Don't pop up notifications; only ask the window manager to
+    //                 draw attention to the Zed window (taskbar highlight, urgency hint)
     // "never" - Never show these notifications
     "notify_when_agent_waiting": "primary_screen",
     // When to play a sound when the agent has either completed

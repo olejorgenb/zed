@@ -560,6 +560,9 @@ pub enum NotifyWhenAgentWaiting {
     #[default]
     PrimaryScreen,
     AllScreens,
+    /// Only ask the window manager to draw attention to the Zed window, without
+    /// popping up any notification windows.
+    UrgentOnly,
     Never,
 }
 

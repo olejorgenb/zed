@@ -726,6 +726,13 @@ impl Drop for WaylandWindow {
     }
 }
 
+enum ActivationIntent {
+    /// Ask the compositor to raise and focus the window.
+    Focus,
+    /// Ask the compositor to flag the window as needing the user's attention.
+    Attention,
+}
+
 impl WaylandWindow {
     fn borrow(&self) -> Ref<'_, WaylandWindowState> {
         self.0.state.borrow()
@@ -733,6 +740,33 @@ impl WaylandWindow {
 
     fn borrow_mut(&self) -> RefMut<'_, WaylandWindowState> {
         self.0.state.borrow_mut()
+    }
+
+    /// Requests an xdg-activation token for this window and, once the compositor hands it
+    /// back, activates the window with it.
+    ///
+    /// Wayland has neither an urgency hint nor a separate "demand attention" request, so
+    /// both intents ride the same activation request. Compositors tell them apart by
+    /// whether the token carries a seat serial: with one, the request can be attributed to
+    /// user input and is treated as a focus change; without one, compositors that implement
+    /// urgency (niri, KWin, Mutter) mark the window as demanding attention instead of
+    /// raising it. Omitting the serial is therefore how we ask for urgency rather than
+    /// focus. This is the same convention kitty relies on for its bell.
+    fn request_activation(&self, intent: ActivationIntent) {
+        let state = self.borrow();
+        let (Some(activation), Some(app_id)) = (&state.globals.activation, state.app_id.clone())
+        else {
+            return;
+        };
+        state.client.set_pending_activation(state.surface.id());
+        let token = activation.get_activation_token(&state.globals.qh, ());
+        token.set_app_id(app_id);
+        if matches!(intent, ActivationIntent::Focus) {
+            let serial = state.client.get_serial(SerialKind::MousePress);
+            token.set_serial(serial.as_raw(), &state.globals.seat);
+        }
+        token.set_surface(&state.surface);
+        token.commit();
     }
 
     pub fn new(
@@ -1569,23 +1603,15 @@ impl PlatformWindow for WaylandWindow {
     }
 
     fn activate(&self) {
-        // Try to request an activation token. Even though the activation is likely going to be rejected,
-        // KWin and Mutter can use the app_id to visually indicate we're requesting attention.
-        let state = self.borrow();
-        if let (Some(activation), Some(app_id)) = (&state.globals.activation, state.app_id.clone())
-        {
-            state.client.set_pending_activation(state.surface.id());
-            let token = activation.get_activation_token(&state.globals.qh, ());
-            // The serial isn't exactly important here, since the activation is probably going to be rejected anyway.
-            let serial = state.client.get_serial(SerialKind::MousePress);
-            token.set_app_id(app_id);
-            token.set_serial(serial.as_raw(), &state.globals.seat);
-            token.set_surface(&state.surface);
-            token.commit();
-        }
+        self.request_activation(ActivationIntent::Focus);
     }
 
-    fn request_attention(&self) {}
+    fn request_attention(&self) {
+        if self.is_active() {
+            return;
+        }
+        self.request_activation(ActivationIntent::Attention);
+    }
 
     fn is_active(&self) -> bool {
         self.borrow().active

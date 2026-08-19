@@ -2666,6 +2666,9 @@ impl AgentPanel {
                     self.pop_up_terminal_notification(terminal_id, &title, screen, window, cx);
                 }
             }
+            NotifyWhenAgentWaiting::UrgentOnly => {
+                window.request_attention();
+            }
             NotifyWhenAgentWaiting::Never => {}
         }
     }
