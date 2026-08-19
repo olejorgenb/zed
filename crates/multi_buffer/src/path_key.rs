@@ -774,7 +774,22 @@ fn enclosing_syntax_node_range(
     range: Range<Point>,
     direction: ExpandExcerptDirection,
 ) -> Option<Range<Point>> {
-    let mut query_range = range.to_offset(buffer_snapshot);
+    // Blank lines at the edges of `range` (e.g. a trailing blank line after the last statement of
+    // a function) aren't covered by any syntax node. Including them in the query forces the
+    // ancestor search past the node that actually encloses the excerpt's content, potentially all
+    // the way up to the root node.
+    let mut trimmed_start_row = range.start.row;
+    let mut trimmed_end_row = range.end.row;
+    while trimmed_start_row < trimmed_end_row && buffer_snapshot.is_line_blank(trimmed_start_row) {
+        trimmed_start_row += 1;
+    }
+    while trimmed_end_row > trimmed_start_row && buffer_snapshot.is_line_blank(trimmed_end_row) {
+        trimmed_end_row -= 1;
+    }
+    let trimmed_range = Point::new(trimmed_start_row, 0)
+        ..Point::new(trimmed_end_row, buffer_snapshot.line_len(trimmed_end_row));
+
+    let mut query_range = trimmed_range.to_offset(buffer_snapshot);
     loop {
         let node_range = buffer_snapshot
             .syntax_ancestor(query_range.clone())?
