@@ -4782,6 +4782,66 @@ async fn test_newline_below_with_cursor_on_deleted_hunk(cx: &mut TestAppContext)
 }
 
 #[gpui::test]
+async fn test_expand_excerpts_to_syntax_node(cx: &mut TestAppContext) {
+    init_test(cx, |_| {});
+
+    let language = Arc::new(Language::new(
+        LanguageConfig::default(),
+        Some(tree_sitter_rust::LANGUAGE.into()),
+    ));
+    let text = indoc! {"
+        fn outer() {
+            fn inner() {
+                let a = 1;
+                let b = 2;
+                let c = 3;
+            }
+        }
+    "};
+    let buffer = cx.new(|cx| Buffer::local(text, cx).with_language(language, cx));
+    cx.condition(&buffer, |buffer, _| !buffer.is_parsing())
+        .await;
+
+    let expand = |direction, cx: &mut TestAppContext| {
+        let multibuffer = cx.new(|cx| {
+            let mut multibuffer = MultiBuffer::new(ReadWrite);
+            multibuffer.set_excerpts_for_path(
+                PathKey::sorted(0),
+                buffer.clone(),
+                [Point::new(3, 0)..Point::new(3, 18)],
+                0,
+                cx,
+            );
+            multibuffer
+        });
+        multibuffer.update(cx, |multibuffer, cx| {
+            let snapshot = multibuffer.snapshot(cx);
+            assert_eq!(snapshot.text(), "        let b = 2;");
+            let anchors = snapshot
+                .excerpts()
+                .map(|excerpt| snapshot.anchor_in_excerpt(excerpt.context.start).unwrap())
+                .collect::<Vec<_>>();
+            multibuffer.expand_excerpts_to_syntax_node(anchors, direction, cx);
+            multibuffer.snapshot(cx).text()
+        })
+    };
+
+    // The enclosing syntax node is the body of `inner`.
+    assert_eq!(
+        expand(ExpandExcerptDirection::Up, cx),
+        "    fn inner() {\n        let a = 1;\n        let b = 2;"
+    );
+    assert_eq!(
+        expand(ExpandExcerptDirection::Down, cx),
+        "        let b = 2;\n        let c = 3;\n    }"
+    );
+    assert_eq!(
+        expand(ExpandExcerptDirection::UpAndDown, cx),
+        "    fn inner() {\n        let a = 1;\n        let b = 2;\n        let c = 3;\n    }"
+    );
+}
+
+#[gpui::test]
 fn test_newline_below_multibuffer(cx: &mut TestAppContext) {
     init_test(cx, |_| {});
 
