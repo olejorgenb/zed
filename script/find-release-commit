@@ -11,8 +11,13 @@ usage() {
     echo "is also merged on main, and prints that main commit's SHA." >&2
     echo >&2
     echo "main-ref defaults to the first of: main, upstream/main, origin/main" >&2
+    echo >&2
+    echo "UNTRACED_LIMIT (default 20) caps how many untraceable commits are listed" >&2
+    echo "when no commit can be traced and the merge-base fallback kicks in." >&2
     exit 1
 }
+
+UNTRACED_LIMIT="${UNTRACED_LIMIT:-20}"
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
     usage
@@ -57,20 +62,53 @@ MERGE_BASE=$(git merge-base "${TAG}" "${MAIN_REF}")
 
 # Newest-first: commits reachable from TAG but not from its merge-base with
 # main, i.e. everything that only lives on the release branch.
+UNTRACED=()
 while IFS=$'\t' read -r sha subject; do
-    if [[ "${subject}" =~ \(#([0-9]+)\) ]]; then
-        pr="${BASH_REMATCH[1]}"
-        match=$(git log "${MAIN_REF}" --format='%H %s' | grep -F "(#${pr})" | head -1 | cut -d' ' -f1)
+    # The loop exits as soon as a commit is traced, so anything recorded here
+    # only gets reported if we fall through to the merge-base fallback.
+    UNTRACED=("${UNTRACED[@]:+${UNTRACED[@]}}" "${sha:0:12}  ${subject}")
+
+    # A subject can carry more than one PR number, and which one lives on main
+    # differs by case:
+    #   `foo (#61199) (cherry-pick to preview) (#62869)` -> #62869 is the
+    #       release-branch PR and only #61199 exists on main
+    #   `Revert "foo (#61467)" (#62399)` -> #62399 is the revert itself, which
+    #       is what landed on main; #61467 is the far older commit it undoes
+    # Trying them right-to-left picks the newest one that main actually has.
+    prs=()
+    while read -r pr; do
+        prs=("${pr}" "${prs[@]:+${prs[@]}}")
+    done < <(grep -oE '\(#[0-9]+\)' <<<"${subject}" | tr -cd '0-9\n')
+    if [ "${#prs[@]}" -eq 0 ]; then
+        continue
+    fi
+    for pr in "${prs[@]}"; do
+        # `|| true` because under `set -o pipefail` a no-match grep (exit 1) or
+        # a SIGPIPE from `head` closing the pipe would otherwise abort the script.
+        match=$(git log "${MAIN_REF}" --format='%H %s' | grep -F "(#${pr})" | head -1 | cut -d' ' -f1) || true
         if [ -n "${match}" ]; then
             echo "release commit: ${sha}  ${subject}" >&2
             echo "  -> traced to original PR #${pr} on ${MAIN_REF}" >&2
             echo "${match}"
             exit 0
         fi
-    fi
+    done
 done < <(git log --format='%H%x09%s' "${MERGE_BASE}..${TAG}")
 
-echo "warning: no cherry-picked commit on ${TAG} could be traced back to ${MAIN_REF};" >&2
-echo "         falling back to the structural merge-base (where the release" >&2
-echo "         branch actually diverged from ${MAIN_REF})" >&2
+echo "warning: none of the ${#UNTRACED[@]} commit(s) on ${TAG} could be traced back to" >&2
+echo "         ${MAIN_REF}; falling back to the structural merge-base (where the" >&2
+echo "         release branch actually diverged from ${MAIN_REF})" >&2
+echo >&2
+if [ "${#UNTRACED[@]}" -gt 0 ]; then
+    shown=0
+    for line in "${UNTRACED[@]}"; do
+        if [ "${shown}" -ge "${UNTRACED_LIMIT}" ]; then
+            echo "         ... and $(( ${#UNTRACED[@]} - shown )) more (re-run with UNTRACED_LIMIT=<n>)" >&2
+            break
+        fi
+        echo "         ${line}" >&2
+        shown=$(( shown + 1 ))
+    done
+    echo >&2
+fi
 echo "${MERGE_BASE}"
