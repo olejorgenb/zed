@@ -317,6 +317,81 @@ impl MultiBuffer {
         }
     }
 
+    /// Like [`Self::expand_excerpts`], but expands each excerpt to the boundaries of the smallest
+    /// enclosing syntax node that extends past the excerpt in the requested direction.
+    pub fn expand_excerpts_to_syntax_node(
+        &mut self,
+        anchors: impl IntoIterator<Item = Anchor>,
+        direction: ExpandExcerptDirection,
+        cx: &mut Context<Self>,
+    ) {
+        let snapshot = self.snapshot(cx);
+        let mut sorted_anchors = anchors
+            .into_iter()
+            .filter_map(|anchor| anchor.excerpt_anchor())
+            .collect::<Vec<_>>();
+        if sorted_anchors.is_empty() {
+            return;
+        }
+        sorted_anchors.sort_by(|a, b| a.cmp(b, &snapshot));
+        let buffers = sorted_anchors.into_iter().chunk_by(|anchor| anchor.path);
+        let mut cursor = snapshot.excerpts.cursor::<ExcerptSummary>(());
+
+        for (path_index, excerpt_anchors) in &buffers {
+            let path = snapshot
+                .path_keys
+                .get_index(path_index.0 as usize)
+                .expect("anchor from wrong multibuffer");
+
+            let mut excerpt_anchors = excerpt_anchors.peekable();
+            let mut ranges = Vec::new();
+
+            cursor.seek_forward(path, Bias::Left);
+            let Some((buffer, buffer_snapshot)) = cursor
+                .item()
+                .map(|excerpt| (excerpt.buffer(&self), excerpt.buffer_snapshot(&snapshot)))
+            else {
+                continue;
+            };
+
+            while let Some(excerpt) = cursor.item()
+                && &excerpt.path_key == path
+            {
+                let mut range = ExcerptRange {
+                    context: excerpt.range.context.to_point(buffer_snapshot),
+                    primary: excerpt.range.primary.to_point(buffer_snapshot),
+                };
+
+                let mut needs_expand = false;
+                while excerpt_anchors.peek().is_some_and(|anchor| {
+                    excerpt
+                        .range
+                        .contains(&anchor.text_anchor(), buffer_snapshot)
+                }) {
+                    needs_expand = true;
+                    excerpt_anchors.next();
+                }
+
+                if needs_expand
+                    && let Some(expanded) = enclosing_syntax_node_range(
+                        buffer_snapshot,
+                        range.context.clone(),
+                        direction,
+                    )
+                {
+                    range.context = expanded;
+                }
+
+                ranges.push(range);
+                cursor.next();
+            }
+
+            ranges.sort_by_key(|r| r.context.start);
+
+            self.set_excerpt_ranges_for_path(path.clone(), buffer, buffer_snapshot, ranges, cx);
+        }
+    }
+
     /// Sets excerpts, returns `true` if at least one new excerpt was added.
     pub(crate) fn set_merged_excerpt_ranges_for_path<T>(
         &mut self,
@@ -689,5 +764,44 @@ impl MultiBuffer {
             source: BufferEditSource::User,
         });
         cx.notify();
+    }
+}
+
+/// Grows `range` to whole lines of the smallest enclosing syntax node that extends past `range` in
+/// the requested direction. Returns `None` when no such node exists.
+fn enclosing_syntax_node_range(
+    buffer_snapshot: &BufferSnapshot,
+    range: Range<Point>,
+    direction: ExpandExcerptDirection,
+) -> Option<Range<Point>> {
+    let mut query_range = range.to_offset(buffer_snapshot);
+    loop {
+        let node_range = buffer_snapshot
+            .syntax_ancestor(query_range.clone())?
+            .byte_range();
+        let node_point_range = node_range.to_point(buffer_snapshot);
+        let expands_up =
+            direction.should_expand_up() && node_point_range.start.row < range.start.row;
+        let expands_down =
+            direction.should_expand_down() && node_point_range.end.row > range.end.row;
+
+        if expands_up || expands_down {
+            let mut expanded = range;
+            if expands_up {
+                expanded.start = Point::new(node_point_range.start.row, 0);
+            }
+            if expands_down {
+                let row = node_point_range.end.row;
+                expanded.end = Point::new(row, buffer_snapshot.line_len(row));
+            }
+            return Some(expanded);
+        }
+
+        // The ancestor is larger than the query range but not past the excerpt in the direction
+        // we're growing, so keep walking up.
+        if node_range == query_range {
+            return None;
+        }
+        query_range = node_range;
     }
 }

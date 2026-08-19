@@ -982,6 +982,33 @@ impl Editor {
         self.expand_excerpts_for_direction(action.lines, ExpandExcerptDirection::Up, cx)
     }
 
+    pub fn expand_excerpts_syntax_node(
+        &mut self,
+        _: &ExpandExcerptsSyntaxNode,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.expand_excerpts_to_syntax_node(ExpandExcerptDirection::UpAndDown, cx)
+    }
+
+    pub fn expand_excerpts_syntax_node_up(
+        &mut self,
+        _: &ExpandExcerptsSyntaxNodeUp,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.expand_excerpts_to_syntax_node(ExpandExcerptDirection::Up, cx)
+    }
+
+    pub fn expand_excerpts_syntax_node_down(
+        &mut self,
+        _: &ExpandExcerptsSyntaxNodeDown,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.expand_excerpts_to_syntax_node(ExpandExcerptDirection::Down, cx)
+    }
+
     pub fn go_to_singleton_buffer_point(
         &mut self,
         point: Point,
@@ -2369,6 +2396,52 @@ impl Editor {
 
         self.buffer.update(cx, |buffer, cx| {
             buffer.expand_excerpts(excerpt_anchors, lines, direction, cx)
+        })
+    }
+
+    fn expand_excerpts_to_syntax_node(
+        &mut self,
+        direction: ExpandExcerptDirection,
+        cx: &mut Context<Self>,
+    ) {
+        // Expansion by syntax node isn't expressible as a line count, so it can't be delegated to
+        // the owner of the multibuffer (the split diff view).
+        if self.delegate_expand_excerpts {
+            return;
+        }
+
+        // Mirrors the anchor collection in `expand_excerpts_for_direction`.
+        let selections = self.selections.disjoint_anchors_arc();
+        let snapshot = self.buffer.read(cx).snapshot(cx);
+        let excerpt_anchors = selections
+            .iter()
+            .flat_map(|selection| {
+                snapshot
+                    .range_to_buffer_ranges(selection.range())
+                    .into_iter()
+                    .filter_map(|(buffer_snapshot, range, _)| {
+                        snapshot.anchor_in_excerpt(buffer_snapshot.anchor_after(range.start))
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        self.buffer.update(cx, |buffer, cx| {
+            buffer.expand_excerpts_to_syntax_node(excerpt_anchors, direction, cx)
+        })
+    }
+
+    pub(super) fn expand_excerpt_to_syntax_node(
+        &mut self,
+        excerpt_anchor: Anchor,
+        direction: ExpandExcerptDirection,
+        cx: &mut Context<Self>,
+    ) {
+        if self.delegate_expand_excerpts {
+            return;
+        }
+
+        self.buffer.update(cx, |buffer, cx| {
+            buffer.expand_excerpts_to_syntax_node([excerpt_anchor], direction, cx)
         })
     }
 

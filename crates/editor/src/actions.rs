@@ -517,6 +517,12 @@ actions!(
         ToggleAllDiffHunks,
         /// Expands macros recursively at cursor position.
         ExpandMacroRecursively,
+        /// Expands excerpts upwards to the start of the enclosing syntax node.
+        ExpandExcerptsSyntaxNodeUp,
+        /// Expands excerpts downwards to the end of the enclosing syntax node.
+        ExpandExcerptsSyntaxNodeDown,
+        /// Expands excerpts to the boundaries of the enclosing syntax node.
+        ExpandExcerptsSyntaxNode,
         /// Finds the next match in the search.
         FindNextMatch,
         /// Finds the previous match in the search.

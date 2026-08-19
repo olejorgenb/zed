@@ -399,6 +399,9 @@ impl EditorElement {
             register_action(editor, window, Editor::expand_excerpts);
             register_action(editor, window, Editor::expand_excerpts_up);
             register_action(editor, window, Editor::expand_excerpts_down);
+            register_action(editor, window, Editor::expand_excerpts_syntax_node);
+            register_action(editor, window, Editor::expand_excerpts_syntax_node_up);
+            register_action(editor, window, Editor::expand_excerpts_syntax_node_down);
         }
         register_action(editor, window, Editor::go_to_diagnostic);
         register_action(editor, window, Editor::go_to_prev_diagnostic);
@@ -2713,9 +2716,13 @@ impl EditorElement {
                     .icon_color(Color::Custom(cx.theme().colors().editor_line_number))
                     .icon_size(IconSize::Custom(rems(editor_font_size / window.rem_size())))
                     .width(width)
-                    .on_click(move |_, window, cx| {
+                    .on_click(move |event, window, cx| {
                         editor.update(cx, |editor, cx| {
-                            editor.expand_excerpt(start_anchor, direction, window, cx);
+                            if event.modifiers().alt {
+                                editor.expand_excerpt_to_syntax_node(start_anchor, direction, cx);
+                            } else {
+                                editor.expand_excerpt(start_anchor, direction, window, cx);
+                            }
                         });
                     })
                     .tooltip(Tooltip::for_action_title(
