@@ -2950,6 +2950,9 @@ impl ConversationView {
                     );
                 }
             }
+            NotifyWhenAgentWaiting::UrgentOnly => {
+                window.request_attention();
+            }
             NotifyWhenAgentWaiting::Never => {
                 // Don't show anything
             }
