@@ -84,6 +84,26 @@ else
     echo "    warning: envsubst not found, skipping $desktop_file"
 fi
 
+# Route OS-level zed:// links to this install. Installing an additional .desktop
+# file that declares x-scheme-handler/zed does NOT change the default handler, so
+# without this the user's mimeapps.list keeps pointing zed:// links at stock Zed.
+# (register_url_scheme is a no-op on Linux; the desktop mime DB is the only path.)
+if [ -f "$desktop_file" ]; then
+    if command -v xdg-mime >/dev/null 2>&1; then
+        xdg-mime default "$APP_ID.desktop" x-scheme-handler/zed
+        echo "    registered $APP_ID.desktop as default handler for zed:// links"
+    elif command -v xdg-settings >/dev/null 2>&1; then
+        xdg-settings set default-url-scheme-handler zed "$APP_ID.desktop"
+        echo "    registered $APP_ID.desktop as default handler for zed:// links"
+    else
+        echo "    warning: neither xdg-mime nor xdg-settings found; zed:// links stay on stock Zed"
+        echo "    run: xdg-mime default $APP_ID.desktop x-scheme-handler/zed"
+    fi
+    if command -v update-desktop-database >/dev/null 2>&1; then
+        update-desktop-database "$(dirname "$desktop_file")" || true
+    fi
+fi
+
 settings_file="${XDG_CONFIG_HOME:-$HOME/.config}/zed/settings.json"
 if ! grep -qE '"auto_update"[[:space:]]*:[[:space:]]*false' "$settings_file" 2>/dev/null; then
     echo
@@ -103,3 +123,4 @@ echo
 echo "Installed: $("$APP_DIR/bin/zed" --version || echo "(could not query version)")"
 echo "Wayland app id is now $APP_ID (window rules keyed on the old id need updating)."
 echo "To go back to stock Zed: ln -sfn ~/.local/zed.app/bin/zed $BIN_LINK"
+echo "                       and, for zed:// links: xdg-mime default dev.zed.Zed.desktop x-scheme-handler/zed"
