@@ -3309,20 +3309,63 @@ impl EditorElement {
                 result.into_any_element()
             }
 
-            Block::ExcerptBoundary { .. } => {
+            Block::ExcerptBoundary { excerpt, .. } => {
                 let color = cx.theme().colors().clone();
+                let syntax = cx.theme().syntax().clone();
                 let mut result = v_flex().id(block_id).w_full();
 
-                result = result.child(
-                    h_flex().relative().child(
-                        div()
-                            .top(line_height / 2.)
-                            .absolute()
-                            .w_full()
-                            .h_px()
-                            .bg(color.border_variant),
-                    ),
-                );
+                // Orient the reader by showing the breadcrumb of the top line of
+                // the upcoming excerpt, the same one a full editor would render if
+                // the cursor were on that line. Falls back to a plain separator
+                // when the buffer has no document outline.
+                let breadcrumbs: SharedString = snapshot
+                    .buffer_snapshot()
+                    .symbols_containing(excerpt.start_anchor, Some(&syntax))
+                    .map(|(_, items)| {
+                        items
+                            .iter()
+                            .map(|item| item.text.as_ref())
+                            .collect::<Vec<_>>()
+                            .join(" › ")
+                            .into()
+                    })
+                    .filter(|text: &SharedString| !text.is_empty())
+                    .unwrap_or_default();
+
+                let separator = div()
+                    .top(line_height / 2.)
+                    .absolute()
+                    .w_full()
+                    .h_px()
+                    .bg(color.border_variant);
+
+                result = result.child(if breadcrumbs.is_empty() {
+                    h_flex().relative().child(separator)
+                } else {
+                    h_flex()
+                        .relative()
+                        .size_full()
+                        .items_center()
+                        .justify_center()
+                        // The chip carries a background so it masks the separator
+                        // underneath, producing a "--- breadcrumb ---" divider.
+                        .child(separator)
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .px_2()
+                                .rounded_xs()
+                                .bg(color.editor_background)
+                                .border_1()
+                                .border_color(color.border_variant)
+                                .child(
+                                    Label::new(breadcrumbs)
+                                        .size(LabelSize::XSmall)
+                                        .color(Color::Muted),
+                                ),
+                        )
+                });
 
                 result.into_any()
             }
