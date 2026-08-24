@@ -3383,8 +3383,9 @@ impl EditorElement {
                             // Expanding by exactly the lines between the excerpt and
                             // the symbol brings that whole symbol into view, so each
                             // segment reaches the code it names.
-                            let lines = excerpt_start_row
-                                .saturating_sub(Point::from_anchor(&symbol.range.start, buffer).row);
+                            let lines = excerpt_start_row.saturating_sub(
+                                Point::from_anchor(&symbol.range.start, buffer).row,
+                            );
                             let editor = self.editor.clone();
                             let start_anchor = excerpt.start_anchor;
 
