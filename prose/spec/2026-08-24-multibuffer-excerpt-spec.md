@@ -27,18 +27,33 @@ wearing different hats:
   original location as the first excerpt and the symbol definition as the second"
   (ideas.md:57).
 
-Each of these is "here is an ordered list of file ranges, show them". None of
-them needs to be a bespoke Zed feature if Zed can be *handed* that list. A
-declarative excerpt spec turns each one into a script that emits JSON, and
-reduces the Zed-side work to a single generic reader.
+Each of these is "here is a set of file ranges, show them". None of them needs to
+be a bespoke Zed feature if Zed can be *handed* that list. A declarative excerpt
+spec turns each one into a script that emits JSON, and reduces the Zed-side work
+to a single generic reader.
 
 That is the goal: **the substrate, not any one consumer.**
 
+**But note "set", not "sequence."** Per the constraints below, the multibuffer
+can order file *groups* and nothing else. That is not a detail — it bites two of
+the three motivating consumers:
+
+- A **stacktrace** is inherently ordered innermost-first, and any recursive or
+  same-file-twice trace has frames that cannot be shown in stack order. Frames
+  collapse into one positionally-ordered group per file.
+- **Follow-symbol** wants "original location first, definition second". When both
+  are in the same file — the common case for a local helper — it gets whichever
+  comes first in the file instead.
+
+Only edit-location history is unaffected, and only if it is deduplicated by file.
+Any consumer that needs sequence has to carry it as *annotation*, not structure.
+
 ## Data model
 
-A multibuffer is conceptually an ordered map of
-`PathKey → (Entity<Buffer>, Vec<ExcerptRange<Anchor>>)`, and `ExcerptRange` is
-already exactly the pair a spec needs:
+A multibuffer is conceptually a map ordered by `PathKey`, from that key to a
+buffer and its excerpts — where the excerpts are kept sorted by position, not in
+insertion order: `PathKey → (Entity<Buffer>, sorted set of ExcerptRange<Anchor>)`.
+`ExcerptRange` is already exactly the pair a spec needs:
 
 ```rust
 struct ExcerptRange<T> {
@@ -86,7 +101,12 @@ authors writing exact ranges should be able to say what the interesting line is.
 }
 ```
 
-`files` is ordered, and that order is the display order — see PathKey below.
+**`files` is ordered; `excerpts` is not.** The array position of each `files`
+entry becomes its display position (via `PathKey::sorted(n)` — `PathKey` derives
+`Ord` over `(sort_prefix, path)`, so the prefix is the lever). Within a file,
+`excerpts` is a **set**: the resolver sorts by position and the array order is
+discarded. JSON has no set literal, so it stays an array — but a spec author must
+not read meaning into that order, and the reader must not promise to preserve it.
 
 ## Resolution semantics
 
@@ -117,10 +137,15 @@ Decisions, not narrative:
    will become one excerpt with one highlight. This is a documented consequence,
    not a bug — but it means a spec cannot force two separate excerpts to stay
    separate if their contexts touch.
-6. **`PathKey` sets display order.** `PathKey::sorted(n)` with `n` as the index in
-   `files` preserves spec order; `PathKey::for_buffer` would instead sort by path.
-   Spec order is almost certainly what a stacktrace wants, so default to
-   `sorted(n)`.
+6. **`PathKey::sorted(n)` for file order, `n` = index in `files`.** `PathKey`
+   derives `Ord` over `(sort_prefix: Option<u64>, path)`, so the prefix is what
+   makes spec order stick; `PathKey::for_buffer` leaves it `None` and sorts by
+   path instead. Use `sorted(n)` uniformly — mixing the two would sort every
+   `None` ahead of every `Some`.
+7. **Never claim excerpt order.** The reader discards `excerpts` array order, so
+   error messages, docs and any future UI must not describe an excerpt as "first"
+   or "next" within a file. A spec author who believes order is preserved will
+   write specs that silently mean something else.
 
 ## Constraints of the substrate
 
