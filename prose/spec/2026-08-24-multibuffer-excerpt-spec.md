@@ -137,11 +137,13 @@ Decisions, not narrative:
    will become one excerpt with one highlight. This is a documented consequence,
    not a bug — but it means a spec cannot force two separate excerpts to stay
    separate if their contexts touch.
-6. **`PathKey::sorted(n)` for file order, `n` = index in `files`.** `PathKey`
-   derives `Ord` over `(sort_prefix: Option<u64>, path)`, so the prefix is what
-   makes spec order stick; `PathKey::for_buffer` leaves it `None` and sorts by
-   path instead. Use `sorted(n)` uniformly — mixing the two would sort every
-   `None` ahead of every `Some`.
+6. **`PathKey::with_sort_prefix(n, path)` for file order**, `n` = index in `files`.
+   `PathKey` derives `Ord` over `(sort_prefix: Option<u64>, path)`, so the prefix
+   is what makes spec order stick. Note **not** `PathKey::sorted(n)` — that sets
+   an *empty* path, which is fine for synthetic groups but loses the real path.
+   `PathKey::for_buffer` uses `with_sort_prefix(worktree_id, path)`, i.e. it sorts
+   by worktree then path; use one scheme uniformly, since a `None` prefix sorts
+   ahead of every `Some`.
 7. **Never claim excerpt order.** The reader discards `excerpts` array order, so
    error messages, docs and any future UI must not describe an excerpt as "first"
    or "next" within a file. A spec author who believes order is preserved will
@@ -177,9 +179,44 @@ rebase-expensive place available, so the spec should be designed *within* the
 constraint: `files` order is the only ordering lever, and within a file the
 reader follows the file.
 
-If a flow genuinely needs out-of-order segments, the escape hatch is presentation
-rather than structure — an annotation per excerpt saying "step 3 of 7" — which is
-what makes the `note` question below load-bearing rather than cosmetic.
+### Why it is this ingrained
+
+It is not a policy applied on write — it is the **addressing scheme**. A
+multibuffer position is `ExcerptAnchor { text_anchor, path: PathKeyIndex,
+diff_base_anchor }` (`anchor.rs`). There is no excerpt identity in it, so two
+excerpts of the same file at the same text position would be *the same anchor*.
+Every selection, scroll position and pinned diagnostic resolves through that, and
+the `SumTree` seek depends on the resulting order being monotonic.
+
+`ExcerptId` no longer exists anywhere in the crate (zero references). It used to —
+`push_excerpts` returned `Vec<ExcerptId>`, which is what made arbitrary order
+possible. Upstream traded per-excerpt identity for path+position addressing;
+interleaving was a casualty of that trade, not an oversight.
+
+**So "a different multibuffer on top of the primitives" is not really available.**
+`MultiBuffer` *is* the primitive the editor renders. Lifting the constraint means
+putting excerpt identity back into `Anchor`, the tree summary, and every consumer
+in `editor` — reverting an upstream architectural decision and carrying it
+forever. That is the worst possible thing to hold on a soft fork.
+
+### Escape hatches that stay within the constraint
+
+1. **Annotation instead of order** — a per-excerpt `note` saying "step 3 of 7".
+   Cheap, and it is what the `note` open question below is really for.
+2. **One `Buffer` per segment.** The rule is one *`BufferId`* → one `PathKey`. A
+   separate `Buffer::local` holding the same file's text gets its own `BufferId`,
+   hence its own `PathKey`, hence arbitrary order and repetition. Precedent:
+   `MultiBuffer::build_multi` in test-support already does exactly this. The cost
+   is that such buffers are detached from the project — no save-through, no
+   language server, edits do not propagate to the real file. For a read-only
+   walkthrough that may be the correct trade. **Unverified:** how the editor
+   renders headers for detached buffers, and whether
+   `Editor::for_multibuffer(.., Some(project), ..)` is happy alongside them.
+   Worth a spike before designing around it.
+3. **Don't use a multibuffer.** A scratch buffer with the segments concatenated
+   and blocks between them gives total freedom over order and prose, at the cost
+   of live anchoring and edit-through. A guided walkthrough may be closer to this
+   than to a multibuffer.
 
 ## Entry points
 
