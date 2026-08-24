@@ -3311,7 +3311,6 @@ impl EditorElement {
 
             Block::ExcerptBoundary { excerpt, .. } => {
                 let color = cx.theme().colors().clone();
-                let syntax = cx.theme().syntax().clone();
                 let mut result = v_flex().id(block_id).w_full();
 
                 // Orient the reader by showing the breadcrumb of the top line of
@@ -3320,7 +3319,9 @@ impl EditorElement {
                 // when the buffer has no document outline.
                 let breadcrumbs: SharedString = snapshot
                     .buffer_snapshot()
-                    .symbols_containing(excerpt.start_anchor, Some(&syntax))
+                    // No syntax theme: this runs on every layout pass, and the
+                    // highlight styles it would resolve are discarded anyway.
+                    .symbols_containing(excerpt.start_anchor, None)
                     .map(|(_, items)| {
                         items
                             .iter()
