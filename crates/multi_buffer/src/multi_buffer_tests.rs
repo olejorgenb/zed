@@ -938,6 +938,144 @@ fn test_expand_excerpts(cx: &mut App) {
     );
 }
 
+#[gpui::test]
+fn test_contract_excerpts(cx: &mut App) {
+    // One excerpt whose primary sits in the middle of a wide context:
+    // context_line_count = 3 makes the context span rows 7..=13 (hhh..nnn),
+    // with the primary match on row 10 (kkk).
+    let buffer = cx.new(|cx| Buffer::local(sample_text(20, 3, 'a'), cx));
+    let multibuffer = cx.new(|_| MultiBuffer::new(Capability::ReadWrite));
+
+    multibuffer.update(cx, |multibuffer, cx| {
+        multibuffer.set_excerpts_for_path(
+            PathKey::for_buffer(&buffer, cx),
+            buffer,
+            vec![Point::new(10, 0)..Point::new(10, 3)],
+            3,
+            cx,
+        )
+    });
+
+    assert_eq!(
+        multibuffer.read(cx).snapshot(cx).text(),
+        concat!(
+            "hhh\n", //
+            "iii\n", //
+            "jjj\n", //
+            "kkk\n", // primary
+            "lll\n", //
+            "mmm\n", //
+            "nnn",   //
+        )
+    );
+
+    // Contracting one line from each side shrinks the context toward the primary.
+    multibuffer.update(cx, |multibuffer, cx| {
+        let snapshot = multibuffer.snapshot(cx);
+        multibuffer.contract_excerpts(
+            snapshot
+                .excerpts()
+                .map(|excerpt| snapshot.anchor_in_excerpt(excerpt.context.start).unwrap()),
+            1,
+            ExpandExcerptDirection::UpAndDown,
+            cx,
+        );
+    });
+
+    assert_eq!(
+        multibuffer.read(cx).snapshot(cx).text(),
+        concat!(
+            "iii\n", //
+            "jjj\n", //
+            "kkk\n", // primary
+            "lll\n", //
+            "mmm",   //
+        )
+    );
+
+    // Contracting far past the primary clamps the context to the primary range.
+    multibuffer.update(cx, |multibuffer, cx| {
+        let snapshot = multibuffer.snapshot(cx);
+        multibuffer.contract_excerpts(
+            snapshot
+                .excerpts()
+                .map(|excerpt| snapshot.anchor_in_excerpt(excerpt.context.start).unwrap()),
+            100,
+            ExpandExcerptDirection::UpAndDown,
+            cx,
+        );
+    });
+
+    assert_eq!(multibuffer.read(cx).snapshot(cx).text(), "kkk");
+}
+
+#[gpui::test]
+fn test_contract_excerpts_in_one_direction(cx: &mut App) {
+    // Same shape as `test_contract_excerpts`: context spans rows 7..=13
+    // (hhh..nnn) around a primary match on row 10 (kkk).
+    let buffer = cx.new(|cx| Buffer::local(sample_text(20, 3, 'a'), cx));
+    let multibuffer = cx.new(|_| MultiBuffer::new(Capability::ReadWrite));
+
+    multibuffer.update(cx, |multibuffer, cx| {
+        multibuffer.set_excerpts_for_path(
+            PathKey::for_buffer(&buffer, cx),
+            buffer,
+            vec![Point::new(10, 0)..Point::new(10, 3)],
+            3,
+            cx,
+        )
+    });
+
+    let contract = |line_count, direction, cx: &mut App| {
+        multibuffer.update(cx, |multibuffer, cx| {
+            let snapshot = multibuffer.snapshot(cx);
+            multibuffer.contract_excerpts(
+                snapshot
+                    .excerpts()
+                    .map(|excerpt| snapshot.anchor_in_excerpt(excerpt.context.start).unwrap()),
+                line_count,
+                direction,
+                cx,
+            );
+        });
+        multibuffer.read(cx).snapshot(cx).text()
+    };
+
+    // Contracting upwards leaves the trailing context alone.
+    assert_eq!(
+        contract(2, ExpandExcerptDirection::Up, cx),
+        concat!(
+            "jjj\n", //
+            "kkk\n", // primary
+            "lll\n", //
+            "mmm\n", //
+            "nnn",   //
+        )
+    );
+
+    // A line count that would overflow the row still just clamps to the primary.
+    assert_eq!(
+        contract(u32::MAX, ExpandExcerptDirection::Up, cx),
+        concat!(
+            "kkk\n", // primary
+            "lll\n", //
+            "mmm\n", //
+            "nnn",   //
+        )
+    );
+
+    // Contracting downwards leaves the leading context alone.
+    assert_eq!(
+        contract(2, ExpandExcerptDirection::Down, cx),
+        concat!(
+            "kkk\n", // primary
+            "lll",   //
+        )
+    );
+
+    assert_eq!(contract(u32::MAX, ExpandExcerptDirection::Down, cx), "kkk");
+}
+
 #[gpui::test(iterations = 100)]
 async fn test_set_anchored_excerpts_for_path(cx: &mut TestAppContext) {
     let buffer_1 = cx.new(|cx| Buffer::local(sample_text(20, 3, 'a'), cx));

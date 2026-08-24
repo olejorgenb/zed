@@ -37,8 +37,8 @@ use workspace::{
 };
 
 use crate::{
-    Autoscroll, DiffHunkDelegate, Editor, EditorEvent, EditorSettings, ResolvedDiffHunks,
-    ToggleSoftWrap, UncommittedDiffHunkDelegate,
+    Autoscroll, DiffHunkDelegate, Editor, EditorEvent, EditorSettings, ExcerptAdjustMode,
+    ResolvedDiffHunks, ToggleSoftWrap, UncommittedDiffHunkDelegate,
     actions::{DisableBreakpoint, EditLogBreakpoint, EnableBreakpoint, ToggleBreakpoint},
     display_map::Companion,
 };
@@ -608,6 +608,24 @@ struct LhsEditor {
     _subscriptions: Vec<Subscription>,
 }
 
+fn adjust_multibuffer_excerpts(
+    rhs_multibuffer: &mut MultiBuffer,
+    excerpt_anchors: impl Iterator<Item = Anchor>,
+    lines: u32,
+    direction: ExpandExcerptDirection,
+    mode: ExcerptAdjustMode,
+    cx: &mut Context<MultiBuffer>,
+) {
+    match mode {
+        ExcerptAdjustMode::Expand => {
+            rhs_multibuffer.expand_excerpts(excerpt_anchors, lines, direction, cx);
+        }
+        ExcerptAdjustMode::Contract => {
+            rhs_multibuffer.contract_excerpts(excerpt_anchors, lines, direction, cx);
+        }
+    }
+}
+
 impl SplittableEditor {
     pub fn rhs_editor(&self) -> &Entity<Editor> {
         &self.rhs_editor
@@ -691,15 +709,17 @@ impl SplittableEditor {
             cx.subscribe(
                 &rhs_editor,
                 |this, _, event: &EditorEvent, cx| match event {
-                    EditorEvent::ExpandExcerptsRequested {
+                    EditorEvent::AdjustExcerptsRequested {
                         excerpt_anchors,
                         lines,
                         direction,
+                        mode,
                     } => {
-                        this.expand_excerpts(
+                        this.adjust_excerpts(
                             excerpt_anchors.iter().copied(),
                             *lines,
                             *direction,
+                            *mode,
                             cx,
                         );
                     }
@@ -805,10 +825,11 @@ impl SplittableEditor {
             &lhs_editor,
             window,
             |this, _, event: &EditorEvent, window, cx| match event {
-                EditorEvent::ExpandExcerptsRequested {
+                EditorEvent::AdjustExcerptsRequested {
                     excerpt_anchors,
                     lines,
                     direction,
+                    mode,
                 } => {
                     if let Some(lhs) = &this.lhs {
                         let rhs_snapshot = this.rhs_multibuffer.read(cx).snapshot(cx);
@@ -828,7 +849,13 @@ impl SplittableEditor {
                                 rhs_snapshot.anchor_in_excerpt(rhs_buffer.anchor_before(rhs_point))
                             })
                             .collect::<Vec<_>>();
-                        this.expand_excerpts(rhs_anchors.into_iter(), *lines, *direction, cx);
+                        this.adjust_excerpts(
+                            rhs_anchors.into_iter(),
+                            *lines,
+                            *direction,
+                            *mode,
+                            cx,
+                        );
                     }
                 }
 
@@ -1281,16 +1308,24 @@ impl SplittableEditor {
         result
     }
 
-    fn expand_excerpts(
+    fn adjust_excerpts(
         &mut self,
         excerpt_anchors: impl Iterator<Item = Anchor> + Clone,
         lines: u32,
         direction: ExpandExcerptDirection,
+        mode: ExcerptAdjustMode,
         cx: &mut Context<Self>,
     ) {
         if self.lhs.is_none() {
             self.rhs_multibuffer.update(cx, |rhs_multibuffer, cx| {
-                rhs_multibuffer.expand_excerpts(excerpt_anchors, lines, direction, cx);
+                adjust_multibuffer_excerpts(
+                    rhs_multibuffer,
+                    excerpt_anchors,
+                    lines,
+                    direction,
+                    mode,
+                    cx,
+                );
             });
             return;
         }
@@ -1308,7 +1343,14 @@ impl SplittableEditor {
                 .collect::<HashMap<_, _>>()
                 .into_iter()
                 .collect();
-            rhs_multibuffer.expand_excerpts(excerpt_anchors, lines, direction, cx);
+            adjust_multibuffer_excerpts(
+                rhs_multibuffer,
+                excerpt_anchors,
+                lines,
+                direction,
+                mode,
+                cx,
+            );
             paths
         });
 
@@ -2390,7 +2432,7 @@ mod tests {
     };
     use crate::inlays::Inlay;
     use crate::test::{editor_content_with_blocks_and_width, set_block_content_for_tests};
-    use crate::{Editor, SplittableEditor};
+    use crate::{Editor, ExcerptAdjustMode, SplittableEditor};
     use multi_buffer::MultiBufferOffset;
 
     async fn init_test(
@@ -2693,12 +2735,13 @@ mod tests {
                         let line_count = rng.random_range(1..5);
                         log::info!("expanding {count} excerpts by {line_count} lines");
                         editor.update(cx, |editor, cx| {
-                            editor.expand_excerpts(
+                            editor.adjust_excerpts(
                                 chosen.into_iter().map(|excerpt| {
                                     snapshot.anchor_in_excerpt(excerpt.context.start).unwrap()
                                 }),
                                 line_count,
                                 ExpandExcerptDirection::UpAndDown,
+                                ExcerptAdjustMode::Expand,
                                 cx,
                             );
                         });
@@ -2784,10 +2827,11 @@ mod tests {
                 .collect::<Vec<_>>()
         });
         editor.update(cx, |editor, cx| {
-            editor.expand_excerpts(
+            editor.adjust_excerpts(
                 excerpts.into_iter(),
                 2,
                 multi_buffer::ExpandExcerptDirection::UpAndDown,
+                ExcerptAdjustMode::Expand,
                 cx,
             );
         });

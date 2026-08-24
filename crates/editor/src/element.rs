@@ -403,6 +403,9 @@ impl EditorElement {
             register_action(editor, window, Editor::expand_excerpts_syntax_node);
             register_action(editor, window, Editor::expand_excerpts_syntax_node_up);
             register_action(editor, window, Editor::expand_excerpts_syntax_node_down);
+            register_action(editor, window, Editor::contract_excerpts);
+            register_action(editor, window, Editor::contract_excerpts_up);
+            register_action(editor, window, Editor::contract_excerpts_down);
         }
         register_action(editor, window, Editor::go_to_diagnostic);
         register_action(editor, window, Editor::go_to_prev_diagnostic);

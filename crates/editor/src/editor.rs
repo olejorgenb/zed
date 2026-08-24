@@ -11903,6 +11903,13 @@ impl Deref for EditorSnapshot {
     }
 }
 
+/// Whether an excerpt adjustment request should expand or contract the excerpts.
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ExcerptAdjustMode {
+    Expand,
+    Contract,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum EditorEvent {
     /// Emitted when the stored review comments change (added, removed, or updated).
@@ -11932,10 +11939,11 @@ pub enum EditorEvent {
         ids: Vec<BufferId>,
         folded: bool,
     },
-    ExpandExcerptsRequested {
+    AdjustExcerptsRequested {
         excerpt_anchors: Vec<Anchor>,
         lines: u32,
         direction: ExpandExcerptDirection,
+        mode: ExcerptAdjustMode,
     },
     OpenExcerptsRequested {
         selections_by_buffer: HashMap<BufferId, (Vec<Range<BufferOffset>>, Option<u32>)>,

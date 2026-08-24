@@ -219,6 +219,33 @@ pub struct ExpandExcerptsDown {
     pub(super) lines: u32,
 }
 
+/// Contracts all excerpts with selections.
+#[derive(PartialEq, Clone, Deserialize, Default, JsonSchema, Action)]
+#[action(namespace = editor)]
+#[serde(deny_unknown_fields)]
+pub struct ContractExcerpts {
+    #[serde(default)]
+    pub(super) lines: u32,
+}
+
+/// Contracts excerpts above the current position.
+#[derive(PartialEq, Clone, Deserialize, Default, JsonSchema, Action)]
+#[action(namespace = editor)]
+#[serde(deny_unknown_fields)]
+pub struct ContractExcerptsUp {
+    #[serde(default)]
+    pub(super) lines: u32,
+}
+
+/// Contracts excerpts below the current position.
+#[derive(PartialEq, Clone, Deserialize, Default, JsonSchema, Action)]
+#[action(namespace = editor)]
+#[serde(deny_unknown_fields)]
+pub struct ContractExcerptsDown {
+    #[serde(default)]
+    pub(super) lines: u32,
+}
+
 /// Handles text input in the editor.
 #[derive(PartialEq, Clone, Deserialize, Default, JsonSchema, Action)]
 #[action(namespace = editor)]
