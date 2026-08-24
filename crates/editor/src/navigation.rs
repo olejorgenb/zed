@@ -961,7 +961,12 @@ impl Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.expand_excerpts_for_direction(action.lines, ExpandExcerptDirection::UpAndDown, cx)
+        self.adjust_excerpts_for_direction(
+            action.lines,
+            ExpandExcerptDirection::UpAndDown,
+            ExcerptAdjustMode::Expand,
+            cx,
+        )
     }
 
     pub fn expand_excerpts_down(
@@ -970,7 +975,12 @@ impl Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.expand_excerpts_for_direction(action.lines, ExpandExcerptDirection::Down, cx)
+        self.adjust_excerpts_for_direction(
+            action.lines,
+            ExpandExcerptDirection::Down,
+            ExcerptAdjustMode::Expand,
+            cx,
+        )
     }
 
     pub fn expand_excerpts_up(
@@ -979,7 +989,12 @@ impl Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.expand_excerpts_for_direction(action.lines, ExpandExcerptDirection::Up, cx)
+        self.adjust_excerpts_for_direction(
+            action.lines,
+            ExpandExcerptDirection::Up,
+            ExcerptAdjustMode::Expand,
+            cx,
+        )
     }
 
     pub fn expand_excerpts_syntax_node(
@@ -1015,7 +1030,12 @@ impl Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.contract_excerpts_for_direction(action.lines, ExpandExcerptDirection::UpAndDown, cx)
+        self.adjust_excerpts_for_direction(
+            action.lines,
+            ExpandExcerptDirection::UpAndDown,
+            ExcerptAdjustMode::Contract,
+            cx,
+        )
     }
 
     pub fn contract_excerpts_up(
@@ -1024,7 +1044,12 @@ impl Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.contract_excerpts_for_direction(action.lines, ExpandExcerptDirection::Up, cx)
+        self.adjust_excerpts_for_direction(
+            action.lines,
+            ExpandExcerptDirection::Up,
+            ExcerptAdjustMode::Contract,
+            cx,
+        )
     }
 
     pub fn contract_excerpts_down(
@@ -1033,7 +1058,12 @@ impl Editor {
         _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.contract_excerpts_for_direction(action.lines, ExpandExcerptDirection::Down, cx)
+        self.adjust_excerpts_for_direction(
+            action.lines,
+            ExpandExcerptDirection::Down,
+            ExcerptAdjustMode::Contract,
+            cx,
+        )
     }
 
     pub fn go_to_singleton_buffer_point(
@@ -2386,10 +2416,11 @@ impl Editor {
         }
     }
 
-    fn expand_excerpts_for_direction(
+    fn adjust_excerpts_for_direction(
         &mut self,
         lines: u32,
         direction: ExpandExcerptDirection,
+        mode: ExcerptAdjustMode,
         cx: &mut Context<Self>,
     ) {
         let selections = self.selections.disjoint_anchors_arc();
@@ -2418,55 +2449,18 @@ impl Editor {
                 excerpt_anchors,
                 lines,
                 direction,
-                mode: ExcerptAdjustMode::Expand,
+                mode,
             });
             return;
         }
 
-        self.buffer.update(cx, |buffer, cx| {
-            buffer.expand_excerpts(excerpt_anchors, lines, direction, cx)
-        })
-    }
-
-    fn contract_excerpts_for_direction(
-        &mut self,
-        lines: u32,
-        direction: ExpandExcerptDirection,
-        cx: &mut Context<Self>,
-    ) {
-        let selections = self.selections.disjoint_anchors_arc();
-
-        let lines = if lines == 0 {
-            EditorSettings::get_global(cx).expand_excerpt_lines
-        } else {
-            lines
-        };
-
-        let snapshot = self.buffer.read(cx).snapshot(cx);
-        let excerpt_anchors = selections
-            .iter()
-            .flat_map(|selection| {
-                snapshot
-                    .range_to_buffer_ranges(selection.range())
-                    .into_iter()
-                    .filter_map(|(buffer_snapshot, range, _)| {
-                        snapshot.anchor_in_excerpt(buffer_snapshot.anchor_after(range.start))
-                    })
-            })
-            .collect::<Vec<_>>();
-
-        if self.delegate_expand_excerpts {
-            cx.emit(EditorEvent::AdjustExcerptsRequested {
-                excerpt_anchors,
-                lines,
-                direction,
-                mode: ExcerptAdjustMode::Contract,
-            });
-            return;
-        }
-
-        self.buffer.update(cx, |buffer, cx| {
-            buffer.contract_excerpts(excerpt_anchors, lines, direction, cx)
+        self.buffer.update(cx, |buffer, cx| match mode {
+            ExcerptAdjustMode::Expand => {
+                buffer.expand_excerpts(excerpt_anchors, lines, direction, cx)
+            }
+            ExcerptAdjustMode::Contract => {
+                buffer.contract_excerpts(excerpt_anchors, lines, direction, cx)
+            }
         })
     }
 
@@ -2481,7 +2475,7 @@ impl Editor {
             return;
         }
 
-        // Mirrors the anchor collection in `expand_excerpts_for_direction`.
+        // Mirrors the anchor collection in `adjust_excerpts_for_direction`.
         let selections = self.selections.disjoint_anchors_arc();
         let snapshot = self.buffer.read(cx).snapshot(cx);
         let excerpt_anchors = selections
