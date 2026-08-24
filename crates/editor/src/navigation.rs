@@ -2430,6 +2430,27 @@ impl Editor {
         })
     }
 
+    pub(super) fn expand_excerpt_by_lines(
+        &mut self,
+        excerpt_anchor: Anchor,
+        lines: u32,
+        direction: ExpandExcerptDirection,
+        cx: &mut Context<Self>,
+    ) {
+        if self.delegate_expand_excerpts {
+            cx.emit(EditorEvent::ExpandExcerptsRequested {
+                excerpt_anchors: vec![excerpt_anchor],
+                lines,
+                direction,
+            });
+            return;
+        }
+
+        self.buffer.update(cx, |buffer, cx| {
+            buffer.expand_excerpts([excerpt_anchor], lines, direction, cx)
+        })
+    }
+
     pub(super) fn expand_excerpt_to_syntax_node(
         &mut self,
         excerpt_anchor: Anchor,

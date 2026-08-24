@@ -1738,6 +1738,7 @@ mod foo «1{
         // b
         // c
 
+
     fn process_data_2«2()2» «2{
         let other_map: Option«3<Vec«4<«5()5»>4»>3» = None;
     }2»
@@ -1777,6 +1778,7 @@ mod foo «1{
         // a
         // b
         // c
+
 
     fn process_data_2«2()2» «2{
         let other_map: Option«3<Vec«4<«5()5»>4»>3» = None;
@@ -1838,6 +1840,7 @@ mod foo «1{
         // a
         // b
         // c
+
 
     fn process_data_2«2()2» «2{
         let other_map: Option«1<Vec«2<«1()1»>2»>1» = None;
@@ -1933,6 +1936,7 @@ mod foo «1{
                 "fn process_data_1\u{00ab}1()1\u{00bb} \u{00ab}1{\n",
                 "    let map: Option\u{00ab}2<Vec\u{00ab}3<\u{00ab}4()4\u{00bb}>3\u{00bb}>2\u{00bb} = None;\n",
                 "}1\u{00bb}\n",
+                "\n",
                 "\n",
                 "\n",
                 "fn process_data_2\u{00ab}1()1\u{00bb} \u{00ab}1{\n",

@@ -84,7 +84,7 @@ use std::{
     time::Duration,
 };
 use sum_tree::Bias;
-use text::BufferId;
+use text::{BufferId, FromAnchor as _};
 use theme::{ActiveTheme, Appearance, PlayerColor};
 use theme_settings::BufferLineHeight;
 use ui::utils::ensure_minimum_contrast;
@@ -3309,94 +3309,117 @@ impl EditorElement {
                 result.into_any_element()
             }
 
-            Block::ExcerptBoundary { excerpt, .. } => {
+            Block::ExcerptBoundary { excerpt, height } => {
                 let color = cx.theme().colors().clone();
+                let syntax = cx.theme().syntax().clone();
                 let mut result = v_flex().id(block_id).w_full();
+                let row_height = *height as f32 * line_height;
+
+                let separator = div()
+                    .absolute()
+                    .top(row_height / 2.)
+                    .w_full()
+                    .h_px()
+                    .bg(color.border_variant);
+
+                let row = h_flex()
+                    .relative()
+                    .w_full()
+                    // Pin the row to the rows the block map reserved for this
+                    // boundary: only custom blocks can report a measured height
+                    // back to the block map, so a taller chip would silently
+                    // paint over the lines below.
+                    .h(row_height)
+                    .items_center()
+                    .justify_center()
+                    // The chip carries a background so it masks the separator
+                    // underneath, producing a "--- breadcrumb ---" divider.
+                    .child(separator);
 
                 // Orient the reader by showing the breadcrumb of the top line of
                 // the upcoming excerpt, the same one a full editor would render if
                 // the cursor were on that line. Falls back to a plain separator
                 // when the buffer has no document outline.
-                let breadcrumbs: SharedString = snapshot
+                let breadcrumb = snapshot
                     .buffer_snapshot()
-                    // No syntax theme: this runs on every layout pass, and the
-                    // highlight styles it would resolve are discarded anyway.
-                    .symbols_containing(excerpt.start_anchor, None)
-                    .map(|(_, items)| {
-                        items
-                            .iter()
-                            .map(|item| item.text.as_ref())
-                            .collect::<Vec<_>>()
-                            .join(" › ")
-                            .into()
+                    .buffer_for_id(excerpt.buffer_id())
+                    .map(|buffer| {
+                        let symbols =
+                            buffer.symbols_containing(excerpt.start_text_anchor(), Some(&syntax));
+                        (buffer, symbols)
                     })
-                    .filter(|text: &SharedString| !text.is_empty())
-                    .unwrap_or_default();
+                    .filter(|(_, symbols)| !symbols.is_empty());
 
-                let separator = div()
-                    .top(line_height / 2.)
-                    .absolute()
-                    .w_full()
-                    .h_px()
-                    .bg(color.border_variant);
+                result = result.child(match breadcrumb {
+                    None => row,
+                    Some((buffer, symbols)) => {
+                        // Match the toolbar breadcrumb: buffer font, syntax
+                        // highlighting, `›` between the segments.
+                        let mut text_style = window.text_style();
+                        let buffer_font = theme_settings::ThemeSettings::get_global(cx)
+                            .buffer_font
+                            .clone();
+                        text_style.font_family = buffer_font.family.clone();
+                        text_style.font_features = buffer_font.features.clone();
+                        text_style.font_style = buffer_font.style;
+                        text_style.font_weight = buffer_font.weight;
+                        text_style.color = color.text_muted;
 
-                result = result.child(if breadcrumbs.is_empty() {
-                    h_flex().relative().child(separator)
-                } else {
-                    h_flex()
-                        .relative()
-                        .w_full()
-                        // Pin the row to the single line the block map reserved for
-                        // this boundary: only custom blocks can report a measured
-                        // height back to the block map, so a taller chip would
-                        // silently paint over the line below.
-                        .h(line_height)
-                        .items_center()
-                        .justify_center()
-                        // The chip carries a background so it masks the separator
-                        // underneath, producing a "--- breadcrumb ---" divider.
-                        .child(separator)
-                        .child(
+                        let excerpt_start_row =
+                            Point::from_anchor(&excerpt.start_text_anchor(), buffer).row;
+
+                        let segments = symbols.into_iter().enumerate().map(|(ix, symbol)| {
+                            // Expanding by exactly the lines between the excerpt and
+                            // the symbol brings that whole symbol into view, so each
+                            // segment reaches the code it names.
+                            let lines = excerpt_start_row
+                                .saturating_sub(Point::from_anchor(&symbol.range.start, buffer).row);
+                            let editor = self.editor.clone();
+                            let start_anchor = excerpt.start_anchor;
+
                             div()
-                                .id("excerpt-breadcrumb")
-                                .flex()
-                                .items_center()
+                                .id(("excerpt-breadcrumb", ix))
+                                .when(lines > 0, |this| {
+                                    this.cursor_pointer()
+                                        .hover(|style| style.text_color(color.text))
+                                        .tooltip(Tooltip::text("Expand Excerpt To Symbol"))
+                                        .on_click(move |_, _, cx| {
+                                            editor.update(cx, |editor, cx| {
+                                                editor.expand_excerpt_by_lines(
+                                                    start_anchor,
+                                                    lines,
+                                                    ExpandExcerptDirection::Up,
+                                                    cx,
+                                                );
+                                            });
+                                        })
+                                })
+                                .child(
+                                    StyledText::new(symbol.text.replace('\n', " "))
+                                        .with_default_highlights(
+                                            &text_style,
+                                            symbol.highlight_ranges,
+                                        ),
+                                )
+                                .into_any_element()
+                        });
+
+                        row.child(
+                            h_flex()
                                 .min_w_0()
+                                .overflow_hidden()
+                                .whitespace_nowrap()
+                                .gap_1()
                                 .px_2()
                                 .rounded_xs()
                                 .bg(color.editor_background)
                                 .border_1()
                                 .border_color(color.border_variant)
-                                .cursor_pointer()
-                                .hover(|style| style.border_color(color.border))
-                                .on_click({
-                                    let editor = self.editor.clone();
-                                    let start_anchor = excerpt.start_anchor;
-                                    move |_, _, cx| {
-                                        editor.update(cx, |editor, cx| {
-                                            editor.expand_excerpt_to_syntax_node(
-                                                start_anchor,
-                                                ExpandExcerptDirection::Up,
-                                                cx,
-                                            );
-                                        });
-                                    }
-                                })
-                                .tooltip(Tooltip::for_action_title(
-                                    "Expand Excerpt To Enclosing Node",
-                                    &crate::actions::ExpandExcerptsSyntaxNodeUp,
-                                ))
-                                .child(
-                                    // A tight line height keeps the chip inside the
-                                    // single row the block reserves, even though the
-                                    // text is close to the buffer font size.
-                                    Label::new(breadcrumbs)
-                                        .size(LabelSize::Default)
-                                        .line_height_style(LineHeightStyle::UiLabel)
-                                        .color(Color::Muted)
-                                        .truncate(),
-                                ),
+                                .children(Itertools::intersperse_with(segments, || {
+                                    Label::new("›").color(Color::Placeholder).into_any_element()
+                                })),
                         )
+                    }
                 });
 
                 result.into_any()

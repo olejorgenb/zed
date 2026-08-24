@@ -289,7 +289,9 @@ use crate::{
 
 pub const FILE_HEADER_HEIGHT: u32 = 2;
 pub const BUFFER_HEADER_PADDING: Rems = rems(0.25);
-pub const MULTI_BUFFER_EXCERPT_HEADER_HEIGHT: u32 = 1;
+/// Two rows, so the breadcrumb chip drawn on the separator has room to breathe
+/// between the excerpts it sits between.
+pub const MULTI_BUFFER_EXCERPT_HEADER_HEIGHT: u32 = 2;
 const CURSOR_BLINK_INTERVAL: Duration = Duration::from_millis(500);
 const MAX_LINE_LEN: usize = 1024;
 const MIN_NAVIGATION_HISTORY_ROW_DELTA: i64 = 10;

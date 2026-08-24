@@ -15976,8 +15976,10 @@ async fn test_multibuffer_format_during_save(cx: &mut TestAppContext) {
             bbbb
             cccc
             § -----
+            § -----
             ffff
             gggg
+            § -----
             § -----
             jjjj
             § other.rs
@@ -15986,7 +15988,9 @@ async fn test_multibuffer_format_during_save(cx: &mut TestAppContext) {
             mmmm
             nnnn|four|five|six|
             § -----
+            § -----
 
+            § -----
             § -----
             uuuu
             § lib.rs
@@ -15995,8 +15999,10 @@ async fn test_multibuffer_format_during_save(cx: &mut TestAppContext) {
             wwww
             xxxx
             § -----
+            § -----
             {{{{
             ||||
+            § -----
             § -----
             ...."}
     );
@@ -16057,8 +16063,10 @@ async fn test_multibuffer_format_during_save(cx: &mut TestAppContext) {
             a|o[formatted]bbbb
             cccc
             § -----
+            § -----
             ffff
             gggg
+            § -----
             § -----
             jjjj
 
@@ -16067,7 +16075,9 @@ async fn test_multibuffer_format_during_save(cx: &mut TestAppContext) {
             lll[formatted]mmmm
             nnnn|four|five|six|
             § -----
+            § -----
 
+            § -----
             § -----
             uuuu
 
@@ -16077,8 +16087,10 @@ async fn test_multibuffer_format_during_save(cx: &mut TestAppContext) {
             wwww
             xxxx
             § -----
+            § -----
             {{{{
             ||||
+            § -----
             § -----
             ...."}
     );
@@ -26914,7 +26926,7 @@ async fn test_multibuffer_reverts(cx: &mut TestAppContext) {
     cx.executor().run_until_parked();
 
     editor.update_in(cx, |editor, window, cx| {
-        assert_eq!(editor.display_text(cx), "\n\nXaaa\nXbbb\nXccc\n\nXfff\nXggg\n\nXjjj\n\n\nXlll\nXmmm\nXnnn\n\nXqqq\nXrrr\n\nXuuu\n\n\nXvvv\nXwww\nXxxx\n\nX{{{\nX|||\n\nX\u{7f}\u{7f}\u{7f}");
+        assert_eq!(editor.display_text(cx), "\n\nXaaa\nXbbb\nXccc\n\n\nXfff\nXggg\n\n\nXjjj\n\n\nXlll\nXmmm\nXnnn\n\n\nXqqq\nXrrr\n\n\nXuuu\n\n\nXvvv\nXwww\nXxxx\n\n\nX{{{\nX|||\n\n\nX\u{7f}\u{7f}\u{7f}");
         editor.select_all(&SelectAll, window, cx);
         editor.git_restore(&Default::default(), window, cx);
     });
@@ -26922,7 +26934,7 @@ async fn test_multibuffer_reverts(cx: &mut TestAppContext) {
 
     // When all ranges are selected, all buffer hunks are reverted.
     editor.update(cx, |editor, cx| {
-        assert_eq!(editor.display_text(cx), "\n\naaaa\nbbbb\ncccc\ndddd\neeee\nffff\ngggg\nhhhh\niiii\njjjj\n\n\n\n\n\n\nllll\nmmmm\nnnnn\noooo\npppp\nqqqq\nrrrr\nssss\ntttt\nuuuu\n\n\n\n\n\n\nvvvv\nwwww\nxxxx\nyyyy\nzzzz\n{{{{\n||||\n}}}}\n~~~~\n\u{7f}\u{7f}\u{7f}\u{7f}\n\n\n\n");
+        assert_eq!(editor.display_text(cx), "\u{a}\u{a}aaaa\u{a}bbbb\u{a}cccc\u{a}dddd\u{a}eeee\u{a}ffff\u{a}gggg\u{a}hhhh\u{a}iiii\u{a}jjjj\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}llll\u{a}mmmm\u{a}nnnn\u{a}oooo\u{a}pppp\u{a}qqqq\u{a}rrrr\u{a}ssss\u{a}tttt\u{a}uuuu\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}vvvv\u{a}wwww\u{a}xxxx\u{a}yyyy\u{a}zzzz\u{a}{{{{\u{a}||||\u{a}}}}}\u{a}~~~~\u{a}\u{7f}\u{7f}\u{7f}\u{7f}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}");
     });
     buffer_1.update(cx, |buffer, _| {
         assert_eq!(buffer.text(), base_text_1);
@@ -26950,7 +26962,7 @@ async fn test_multibuffer_reverts(cx: &mut TestAppContext) {
     editor.update(cx, |editor, cx| {
         assert_eq!(
             editor.display_text(cx),
-            "\n\naaaa\nbbbb\ncccc\ndddd\neeee\nffff\ngggg\nhhhh\niiii\njjjj\n\n\n\n\n\n\nXlll\nXmmm\nXnnn\n\nXqqq\nXrrr\n\nXuuu\n\n\nXvvv\nXwww\nXxxx\n\nX{{{\nX|||\n\nX\u{7f}\u{7f}\u{7f}"
+            "\u{a}\u{a}aaaa\u{a}bbbb\u{a}cccc\u{a}dddd\u{a}eeee\u{a}ffff\u{a}gggg\u{a}hhhh\u{a}iiii\u{a}jjjj\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}Xlll\u{a}Xmmm\u{a}Xnnn\u{a}\u{a}\u{a}Xqqq\u{a}Xrrr\u{a}\u{a}\u{a}Xuuu\u{a}\u{a}\u{a}Xvvv\u{a}Xwww\u{a}Xxxx\u{a}\u{a}\u{a}X{{{\u{a}X|||\u{a}\u{a}\u{a}X\u{7f}\u{7f}\u{7f}"
         );
     });
     buffer_1.update(cx, |buffer, _| {
@@ -31002,7 +31014,7 @@ async fn test_folding_buffers(cx: &mut TestAppContext) {
 
     assert_eq!(
         multi_buffer_editor.update(cx, |editor, cx| editor.display_text(cx)),
-        "\n\naaaa\nbbbb\ncccc\n\nffff\ngggg\n\njjjj\n\n\nllll\nmmmm\nnnnn\n\nqqqq\nrrrr\n\nuuuu\n\n\nvvvv\nwwww\nxxxx\n\n1111\n2222\n\n5555",
+        "\u{a}\u{a}aaaa\u{a}bbbb\u{a}cccc\u{a}\u{a}\u{a}ffff\u{a}gggg\u{a}\u{a}\u{a}jjjj\u{a}\u{a}\u{a}llll\u{a}mmmm\u{a}nnnn\u{a}\u{a}\u{a}qqqq\u{a}rrrr\u{a}\u{a}\u{a}uuuu\u{a}\u{a}\u{a}vvvv\u{a}wwww\u{a}xxxx\u{a}\u{a}\u{a}1111\u{a}2222\u{a}\u{a}\u{a}5555",
     );
 
     multi_buffer_editor.update(cx, |editor, cx| {
@@ -31010,7 +31022,7 @@ async fn test_folding_buffers(cx: &mut TestAppContext) {
     });
     assert_eq!(
         multi_buffer_editor.update(cx, |editor, cx| editor.display_text(cx)),
-        "\n\n\n\nllll\nmmmm\nnnnn\n\nqqqq\nrrrr\n\nuuuu\n\n\nvvvv\nwwww\nxxxx\n\n1111\n2222\n\n5555",
+        "\u{a}\u{a}\u{a}\u{a}llll\u{a}mmmm\u{a}nnnn\u{a}\u{a}\u{a}qqqq\u{a}rrrr\u{a}\u{a}\u{a}uuuu\u{a}\u{a}\u{a}vvvv\u{a}wwww\u{a}xxxx\u{a}\u{a}\u{a}1111\u{a}2222\u{a}\u{a}\u{a}5555",
         "After folding the first buffer, its text should not be displayed"
     );
 
@@ -31019,7 +31031,7 @@ async fn test_folding_buffers(cx: &mut TestAppContext) {
     });
     assert_eq!(
         multi_buffer_editor.update(cx, |editor, cx| editor.display_text(cx)),
-        "\n\n\n\n\n\nvvvv\nwwww\nxxxx\n\n1111\n2222\n\n5555",
+        "\u{a}\u{a}\u{a}\u{a}\u{a}\u{a}vvvv\u{a}wwww\u{a}xxxx\u{a}\u{a}\u{a}1111\u{a}2222\u{a}\u{a}\u{a}5555",
         "After folding the second buffer, its text should not be displayed"
     );
 
@@ -31044,7 +31056,7 @@ async fn test_folding_buffers(cx: &mut TestAppContext) {
     });
     assert_eq!(
         multi_buffer_editor.update(cx, |editor, cx| editor.display_text(cx)),
-        "\n\n\n\nllll\nmmmm\nnnnn\n\nqqqq\nrrrr\n\nuuuu\n\n",
+        "\u{a}\u{a}\u{a}\u{a}llll\u{a}mmmm\u{a}nnnn\u{a}\u{a}\u{a}qqqq\u{a}rrrr\u{a}\u{a}\u{a}uuuu\u{a}\u{a}",
         "After unfolding the second buffer, its text should be displayed"
     );
 
@@ -31066,7 +31078,7 @@ async fn test_folding_buffers(cx: &mut TestAppContext) {
 
     assert_eq!(
         multi_buffer_editor.update(cx, |editor, cx| editor.display_text(cx)),
-        "\n\naaaa\nBbbbb\ncccc\n\nffff\ngggg\n\njjjj\n\n\nllll\nmmmm\nnnnn\n\nqqqq\nrrrr\n\nuuuu\n\n",
+        "\u{a}\u{a}aaaa\u{a}Bbbbb\u{a}cccc\u{a}\u{a}\u{a}ffff\u{a}gggg\u{a}\u{a}\u{a}jjjj\u{a}\u{a}\u{a}llll\u{a}mmmm\u{a}nnnn\u{a}\u{a}\u{a}qqqq\u{a}rrrr\u{a}\u{a}\u{a}uuuu\u{a}\u{a}",
         "After unfolding the first buffer, its and 2nd buffer's text should be displayed"
     );
 
@@ -31075,7 +31087,7 @@ async fn test_folding_buffers(cx: &mut TestAppContext) {
     });
     assert_eq!(
         multi_buffer_editor.update(cx, |editor, cx| editor.display_text(cx)),
-        "\n\naaaa\nBbbbb\ncccc\n\nffff\ngggg\n\njjjj\n\n\nllll\nmmmm\nnnnn\n\nqqqq\nrrrr\n\nuuuu\n\n\nvvvv\nwwww\nxxxx\n\n1111\n2222\n\n5555",
+        "\u{a}\u{a}aaaa\u{a}Bbbbb\u{a}cccc\u{a}\u{a}\u{a}ffff\u{a}gggg\u{a}\u{a}\u{a}jjjj\u{a}\u{a}\u{a}llll\u{a}mmmm\u{a}nnnn\u{a}\u{a}\u{a}qqqq\u{a}rrrr\u{a}\u{a}\u{a}uuuu\u{a}\u{a}\u{a}vvvv\u{a}wwww\u{a}xxxx\u{a}\u{a}\u{a}1111\u{a}2222\u{a}\u{a}\u{a}5555",
         "After unfolding the all buffers, all original text should be displayed"
     );
 }
