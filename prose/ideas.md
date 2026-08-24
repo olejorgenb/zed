@@ -93,6 +93,39 @@ A couple examples:
 - Open the edit-location history in a multibuffer
 - Allow removing excerpts from a multibuffer
 
+## A stacktrace language server
+
+Register a `stacktrace` language (paste a trace into a scratch buffer, or open a
+`*.stacktrace` file) and back it with a small language server that **wraps the
+real language server** for whatever language the trace came from.
+
+The appeal: this needs *no new Zed feature*. Everything is existing LSP surface.
+
+- `textDocument/documentLink` — every frame becomes a link to its real location.
+  Ctrl-click already works, so navigating a pasted stacktrace is free.
+- `textDocument/definition` on a frame — jump to the frame's function, not just
+  its line.
+- `textDocument/documentSymbol` — the frame list becomes an outline, so the
+  breadcrumb and outline panel work on a trace.
+- `textDocument/hover` — show the source line, or the surrounding lines, inline.
+
+**Why wrap rather than reimplement.** Turning `com.foo.Bar.baz(Bar.java:42)` or a
+Python frame in `site-packages` into a real file is symbol resolution, and the
+underlying server already does it via `workspace/symbol`. The wrapper's own job
+is small: parse frames out of the text, ask the real server where each symbol
+lives, and translate the answer back to a position in the trace buffer. It also
+handles the things a plain regex cannot — source maps, JVM inner classes,
+vendored paths, `<anonymous>` frames.
+
+**Connects to the excerpt spec** (`prose/spec/2026-08-24-multibuffer-excerpt-spec.md`):
+the stacktrace server resolves frames to locations; the excerpt spec is the
+transport that turns a list of locations into a multibuffer. Two halves of the
+Sentry-style stacktrace view above, and each is useful without the other.
+
+Open: does the wrapper need to be a real LSP process, or is a Zed extension
+enough? Also unclear how to pick *which* underlying server to wrap — the trace's
+language is usually inferable from its shape, but not always.
+
 
 
 
