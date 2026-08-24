@@ -1807,6 +1807,30 @@ Positive `integer` values
 
 Positive `integer` value between 1 and 32. Values outside of this range will be clamped to this range.
 
+## Excerpt Breadcrumb Alignment
+
+- Description: Where to place the breadcrumb shown on the separator between multibuffer excerpts.
+- Setting: `excerpt_breadcrumb_alignment`
+- Default: `center`
+
+**Options**
+
+1. Center the breadcrumb on the separator, splitting the rule around it:
+
+```json
+{
+  "excerpt_breadcrumb_alignment": "center"
+}
+```
+
+2. Align the breadcrumb with the start of the excerpt's text:
+
+```json
+{
+  "excerpt_breadcrumb_alignment": "left"
+}
+```
+
 ## Extend Comment On Newline
 
 - Description: Whether to start a new line with a comment when a previous line is a comment as well.

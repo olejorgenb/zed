@@ -5,10 +5,11 @@ use language::CursorShape;
 use project::project_settings::DiagnosticSeverity;
 pub use settings::{
     CodeLens, CompletionDetailAlignment, CompletionMenuItemKind, CurrentLineHighlight, DelayMs,
-    DiffViewStyle, DisplayIn, DocumentColorsRenderMode, DoubleClickInMultibuffer, GitGutterWidth,
-    GoToDefinitionFallback, GoToDefinitionScrollStrategy, MinimapThumb, MinimapThumbBorder,
-    MultiCursorModifier, OpenResultsIn, ScrollBeyondLastLine, ScrollbarDiagnostics,
-    SeedQuerySetting, ShowMinimap, SnippetSortOrder,
+    DiffViewStyle, DisplayIn, DocumentColorsRenderMode, DoubleClickInMultibuffer,
+    ExcerptBreadcrumbAlignment, GitGutterWidth, GoToDefinitionFallback,
+    GoToDefinitionScrollStrategy, MinimapThumb, MinimapThumbBorder, MultiCursorModifier,
+    OpenResultsIn, ScrollBeyondLastLine, ScrollbarDiagnostics, SeedQuerySetting, ShowMinimap,
+    SnippetSortOrder,
 };
 use settings::{RegisterSetting, RelativeLineNumbers, Settings};
 use ui::scrollbars::ShowScrollbar;
@@ -46,6 +47,7 @@ pub struct EditorSettings {
     pub redact_private_values: bool,
     pub expand_excerpt_lines: u32,
     pub excerpt_context_lines: u32,
+    pub excerpt_breadcrumb_alignment: ExcerptBreadcrumbAlignment,
     pub middle_click_paste: bool,
     pub double_click_in_multibuffer: DoubleClickInMultibuffer,
     pub search_wrap: bool,
@@ -287,6 +289,7 @@ impl Settings for EditorSettings {
             redact_private_values: editor.redact_private_values.unwrap(),
             expand_excerpt_lines: editor.expand_excerpt_lines.unwrap(),
             excerpt_context_lines: editor.excerpt_context_lines.unwrap(),
+            excerpt_breadcrumb_alignment: editor.excerpt_breadcrumb_alignment.unwrap(),
             middle_click_paste: editor.middle_click_paste.unwrap(),
             double_click_in_multibuffer: editor.double_click_in_multibuffer.unwrap(),
             search_wrap: editor.search_wrap.unwrap(),

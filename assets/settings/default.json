@@ -456,6 +456,13 @@
   "expand_excerpt_lines": 5,
   // The default number of context lines shown in multibuffer excerpts.
   "excerpt_context_lines": 2,
+  // Where to place the breadcrumb shown on the separator between multibuffer excerpts.
+  //
+  // 1. Center it on the separator:
+  //   "center"
+  // 2. Align it with the start of the excerpt's text:
+  //   "left"
+  "excerpt_breadcrumb_alignment": "center",
   // Globs to match against file paths to determine if a file is private.
   "private_files": ["**/.env*", "**/*.pem", "**/*.key", "**/*.cert", "**/*.crt", "**/secrets.yml"],
   // Whether to use additional LSP queries to format (and amend) the code after

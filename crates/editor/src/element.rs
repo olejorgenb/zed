@@ -22,8 +22,9 @@ use crate::{
         HighlightKey, HighlightedChunk, ToDisplayPoint,
     },
     editor_settings::{
-        CurrentLineHighlight, DocumentColorsRenderMode, GitGutterWidth, Minimap, MinimapThumb,
-        MinimapThumbBorder, ScrollBeyondLastLine, ScrollbarAxes, ScrollbarDiagnostics, ShowMinimap,
+        CurrentLineHighlight, DocumentColorsRenderMode, ExcerptBreadcrumbAlignment, GitGutterWidth,
+        Minimap, MinimapThumb, MinimapThumbBorder, ScrollBeyondLastLine, ScrollbarAxes,
+        ScrollbarDiagnostics, ShowMinimap,
     },
     git::blame::{BlameRenderer, GitBlame, GlobalBlameRenderer},
     hover_popover::{
@@ -3331,7 +3332,14 @@ impl EditorElement {
                     // paint over the lines below.
                     .h(row_height)
                     .items_center()
-                    .justify_center()
+                    .map(|this| {
+                        match EditorSettings::get_global(cx).excerpt_breadcrumb_alignment {
+                            ExcerptBreadcrumbAlignment::Center => this.justify_center(),
+                            // Line the chip up with the code it names, rather
+                            // than with the gutter it starts behind.
+                            ExcerptBreadcrumbAlignment::Left => this.justify_start().pl(text_x),
+                        }
+                    })
                     // The chip carries a background so it masks the separator
                     // underneath, producing a "--- breadcrumb ---" divider.
                     .child(separator);

@@ -266,6 +266,7 @@ impl VsCodeSettings {
             diagnostics_max_severity: None,
             double_click_in_multibuffer: None,
             drag_and_drop_selection: None,
+            excerpt_breadcrumb_alignment: None,
             excerpt_context_lines: None,
             expand_excerpt_lines: None,
             fast_scroll_sensitivity: self.read_f32("editor.fastScrollSensitivity"),

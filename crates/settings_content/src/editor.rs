@@ -144,6 +144,12 @@ pub struct EditorSettingsContent {
     /// Default: 2
     pub excerpt_context_lines: Option<u32>,
 
+    /// Where to place the breadcrumb shown on the separator between multibuffer
+    /// excerpts
+    ///
+    /// Default: center
+    pub excerpt_breadcrumb_alignment: Option<ExcerptBreadcrumbAlignment>,
+
     /// Whether to enable middle-click paste on Linux
     ///
     /// Default: true
@@ -320,6 +326,29 @@ pub enum CompletionDetailAlignment {
     #[default]
     Left,
     Right,
+}
+
+#[derive(
+    Debug,
+    Default,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    MergeFrom,
+    PartialEq,
+    Eq,
+    strum::VariantArray,
+    strum::VariantNames,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ExcerptBreadcrumbAlignment {
+    /// Center the breadcrumb on the separator, splitting the rule around it.
+    #[default]
+    Center,
+    /// Align the breadcrumb with the start of the excerpt's text.
+    Left,
 }
 
 #[derive(
