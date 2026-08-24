@@ -3344,7 +3344,12 @@ impl EditorElement {
                 } else {
                     h_flex()
                         .relative()
-                        .size_full()
+                        .w_full()
+                        // Pin the row to the single line the block map reserved for
+                        // this boundary: only custom blocks can report a measured
+                        // height back to the block map, so a taller chip would
+                        // silently paint over the line below.
+                        .h(line_height)
                         .items_center()
                         .justify_center()
                         // The chip carries a background so it masks the separator
@@ -3354,6 +3359,7 @@ impl EditorElement {
                             div()
                                 .flex()
                                 .items_center()
+                                .min_w_0()
                                 .px_2()
                                 .rounded_xs()
                                 .bg(color.editor_background)
@@ -3362,7 +3368,8 @@ impl EditorElement {
                                 .child(
                                     Label::new(breadcrumbs)
                                         .size(LabelSize::XSmall)
-                                        .color(Color::Muted),
+                                        .color(Color::Muted)
+                                        .truncate(),
                                 ),
                         )
                 });
