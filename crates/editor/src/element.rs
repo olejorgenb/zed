@@ -3358,6 +3358,7 @@ impl EditorElement {
                         .child(separator)
                         .child(
                             div()
+                                .id("excerpt-breadcrumb")
                                 .flex()
                                 .items_center()
                                 .min_w_0()
@@ -3366,9 +3367,32 @@ impl EditorElement {
                                 .bg(color.editor_background)
                                 .border_1()
                                 .border_color(color.border_variant)
+                                .cursor_pointer()
+                                .hover(|style| style.border_color(color.border))
+                                .on_click({
+                                    let editor = self.editor.clone();
+                                    let start_anchor = excerpt.start_anchor;
+                                    move |_, _, cx| {
+                                        editor.update(cx, |editor, cx| {
+                                            editor.expand_excerpt_to_syntax_node(
+                                                start_anchor,
+                                                ExpandExcerptDirection::Up,
+                                                cx,
+                                            );
+                                        });
+                                    }
+                                })
+                                .tooltip(Tooltip::for_action_title(
+                                    "Expand Excerpt To Enclosing Node",
+                                    &crate::actions::ExpandExcerptsSyntaxNodeUp,
+                                ))
                                 .child(
+                                    // A tight line height keeps the chip inside the
+                                    // single row the block reserves, even though the
+                                    // text is close to the buffer font size.
                                     Label::new(breadcrumbs)
-                                        .size(LabelSize::XSmall)
+                                        .size(LabelSize::Default)
+                                        .line_height_style(LineHeightStyle::UiLabel)
                                         .color(Color::Muted)
                                         .truncate(),
                                 ),
