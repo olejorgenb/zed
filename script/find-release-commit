@@ -4,20 +4,29 @@ set -euo pipefail
 usage() {
     echo "Usage: $0 <tag> [main-ref]" >&2
     echo >&2
-    echo "Release tags (e.g. v1.8.2) live on stable branches whose commits are" >&2
-    echo "cherry-picks of PRs merged to main, so the tag itself usually isn't" >&2
-    echo "reachable from main. This walks back through the release branch's" >&2
-    echo "commits, newest first, until it finds one whose original PR number" >&2
-    echo "is also merged on main, and prints that main commit's SHA." >&2
+    echo "Prints the commit on main that a release shipped from — the right thing" >&2
+    echo "to rebase a long-lived branch onto." >&2
+    echo >&2
+    echo "Zed cuts a release branch from main and then cherry-picks fixes onto it," >&2
+    echo "so a release tag is never reachable from main. The branch point is, and" >&2
+    echo "it is not just an arbitrary nearby commit: every vX.Y.0-pre tag is" >&2
+    echo "identical to its merge-base with main except for one line in" >&2
+    echo "crates/zed/RELEASE_CHANNEL. That merge-base is the source a preview build" >&2
+    echo "shipped from." >&2
+    echo >&2
+    echo "Later tags on the same line (vX.Y.0, vX.Y.2, ...) share that merge-base;" >&2
+    echo "the extra commits are fixes found after the cut. They are listed so you" >&2
+    echo "can cherry-pick from main the ones you care about — the target itself" >&2
+    echo "predates them." >&2
     echo >&2
     echo "main-ref defaults to the first of: main, upstream/main, origin/main" >&2
     echo >&2
-    echo "UNTRACED_LIMIT (default 20) caps how many untraceable commits are listed" >&2
-    echo "when no commit can be traced and the merge-base fallback kicks in." >&2
+    echo "PICKS_LIMIT (default 20) caps how many post-cut commits are listed." >&2
     exit 1
 }
 
-UNTRACED_LIMIT="${UNTRACED_LIMIT:-20}"
+PICKS_LIMIT="${PICKS_LIMIT:-20}"
+CHANNEL_FILE="crates/zed/RELEASE_CHANNEL"
 
 if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
     usage
@@ -52,6 +61,17 @@ fi
 
 echo "Using main ref: ${MAIN_REF}" >&2
 
+# `main` here is a pure mirror of upstream/main, so a stale mirror silently
+# drags every answer backwards. Say so before it matters.
+if [ "${MAIN_REF}" != "upstream/main" ] &&
+    git rev-parse --verify --quiet upstream/main >/dev/null &&
+    [ "$(git rev-parse "${MAIN_REF}")" != "$(git rev-parse upstream/main)" ] &&
+    git merge-base --is-ancestor "${MAIN_REF}" upstream/main; then
+    behind=$(git rev-list --count "${MAIN_REF}..upstream/main")
+    echo "note: ${MAIN_REF} is ${behind} commit(s) behind upstream/main; fetch and update" >&2
+    echo "      it, or pass upstream/main explicitly, or the answer will be too old" >&2
+fi
+
 if git merge-base --is-ancestor "${TAG}" "${MAIN_REF}"; then
     echo "note: ${TAG} is already an ancestor of ${MAIN_REF}" >&2
     git rev-parse "${TAG}"
@@ -60,55 +80,59 @@ fi
 
 MERGE_BASE=$(git merge-base "${TAG}" "${MAIN_REF}")
 
-# Newest-first: commits reachable from TAG but not from its merge-base with
-# main, i.e. everything that only lives on the release branch.
-UNTRACED=()
-while IFS=$'\t' read -r sha subject; do
-    # The loop exits as soon as a commit is traced, so anything recorded here
-    # only gets reported if we fall through to the merge-base fallback.
-    UNTRACED=("${UNTRACED[@]:+${UNTRACED[@]}}" "${sha:0:12}  ${subject}")
-
-    # A subject can carry more than one PR number, and which one lives on main
-    # differs by case:
-    #   `foo (#61199) (cherry-pick to preview) (#62869)` -> #62869 is the
-    #       release-branch PR and only #61199 exists on main
-    #   `Revert "foo (#61467)" (#62399)` -> #62399 is the revert itself, which
-    #       is what landed on main; #61467 is the far older commit it undoes
-    # Trying them right-to-left picks the newest one that main actually has.
-    prs=()
-    while read -r pr; do
-        prs=("${pr}" "${prs[@]:+${prs[@]}}")
-    done < <(grep -oE '\(#[0-9]+\)' <<<"${subject}" | tr -cd '0-9\n')
-    if [ "${#prs[@]}" -eq 0 ]; then
-        continue
+# The shipped-point guard. `<line>.0-pre` is the tag cut at the branch point, so
+# it should differ from the merge-base only by the release-channel marker. If it
+# ever differs by more, upstream changed how releases are cut and the premise of
+# this script needs re-checking — hence a warning rather than a silent answer.
+PRE_TAG=""
+if [[ "${TAG}" =~ ^(v[0-9]+\.[0-9]+)\. ]]; then
+    candidate="${BASH_REMATCH[1]}.0-pre"
+    if git rev-parse --verify --quiet "${candidate}^{commit}" >/dev/null; then
+        PRE_TAG="${candidate}"
     fi
-    for pr in "${prs[@]}"; do
-        # `|| true` because under `set -o pipefail` a no-match grep (exit 1) or
-        # a SIGPIPE from `head` closing the pipe would otherwise abort the script.
-        match=$(git log "${MAIN_REF}" --format='%H %s' | grep -F "(#${pr})" | head -1 | cut -d' ' -f1) || true
-        if [ -n "${match}" ]; then
-            echo "release commit: ${sha}  ${subject}" >&2
-            echo "  -> traced to original PR #${pr} on ${MAIN_REF}" >&2
-            echo "${match}"
-            exit 0
-        fi
-    done
-done < <(git log --format='%H%x09%s' "${MERGE_BASE}..${TAG}")
+fi
 
-echo "warning: none of the ${#UNTRACED[@]} commit(s) on ${TAG} could be traced back to" >&2
-echo "         ${MAIN_REF}; falling back to the structural merge-base (where the" >&2
-echo "         release branch actually diverged from ${MAIN_REF})" >&2
+if [ -n "${PRE_TAG}" ]; then
+    changed=$(git diff --name-only "${MERGE_BASE}" "${PRE_TAG}")
+    if [ "${changed}" = "${CHANNEL_FILE}" ]; then
+        echo "shipped point: identical to ${PRE_TAG} except ${CHANNEL_FILE}" >&2
+    elif [ -z "${changed}" ]; then
+        echo "shipped point: identical to ${PRE_TAG}" >&2
+    else
+        echo "warning: ${MERGE_BASE:0:12} differs from ${PRE_TAG} by more than" >&2
+        echo "         ${CHANNEL_FILE}:" >&2
+        echo "${changed}" | sed 's/^/           /' >&2
+        if [ "${MERGE_BASE}" = "$(git rev-parse "${MAIN_REF}")" ]; then
+            echo "         This is the tip of ${MAIN_REF}, which means ${MAIN_REF} is behind" >&2
+            echo "         the branch point: fetch and update it, then re-run." >&2
+        else
+            echo "         The release-cut convention this script relies on may have" >&2
+            echo "         changed; verify before rebasing onto this commit." >&2
+        fi
+    fi
+else
+    echo "note: no <line>.0-pre tag found for ${TAG}; skipping the shipped-point check" >&2
+fi
+
 echo >&2
-if [ "${#UNTRACED[@]}" -gt 0 ]; then
+echo "$(git log -1 --format='%h %ad %s' --date=short "${MERGE_BASE}")" >&2
+
+# Everything on the tag but not on main: the fixes found after the cut. The
+# target predates all of them, so this doubles as the list of known defects in
+# the baseline you are about to rebase onto.
+mapfile -t PICKS < <(git log --format='%h  %s' "${MERGE_BASE}..${TAG}")
+if [ "${#PICKS[@]}" -gt 0 ]; then
+    echo >&2
+    echo "${#PICKS[@]} commit(s) on ${TAG} after the cut (known fixes this target lacks):" >&2
     shown=0
-    for line in "${UNTRACED[@]}"; do
-        if [ "${shown}" -ge "${UNTRACED_LIMIT}" ]; then
-            echo "         ... and $(( ${#UNTRACED[@]} - shown )) more (re-run with UNTRACED_LIMIT=<n>)" >&2
+    for line in "${PICKS[@]}"; do
+        if [ "${shown}" -ge "${PICKS_LIMIT}" ]; then
+            echo "  ... and $(( ${#PICKS[@]} - shown )) more (re-run with PICKS_LIMIT=<n>)" >&2
             break
         fi
-        echo "         ${line}" >&2
+        echo "  ${line}" >&2
         shown=$(( shown + 1 ))
     done
-    echo >&2
 fi
+
 echo "${MERGE_BASE}"
