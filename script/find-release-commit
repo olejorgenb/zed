@@ -19,7 +19,8 @@ usage() {
     echo "can cherry-pick from main the ones you care about — the target itself" >&2
     echo "predates them." >&2
     echo >&2
-    echo "main-ref defaults to the first of: main, upstream/main, origin/main" >&2
+    echo "main-ref defaults to upstream/main: a local mirror can be stale without" >&2
+    echo "looking it, and a stale ref moves the answer backwards silently." >&2
     echo >&2
     echo "PICKS_LIMIT (default 20) caps how many post-cut commits are listed." >&2
     exit 1
@@ -46,15 +47,9 @@ if [ "$#" -eq 2 ]; then
         exit 1
     fi
 else
-    MAIN_REF=""
-    for candidate in main upstream/main origin/main; do
-        if git rev-parse --verify --quiet "${candidate}" >/dev/null; then
-            MAIN_REF="${candidate}"
-            break
-        fi
-    done
-    if [ -z "${MAIN_REF}" ]; then
-        echo "error: couldn't find a 'main' ref; pass one explicitly" >&2
+    MAIN_REF="upstream/main"
+    if ! git rev-parse --verify --quiet "${MAIN_REF}" >/dev/null; then
+        echo "error: ${MAIN_REF} not found; pass a main ref explicitly" >&2
         exit 1
     fi
 fi
